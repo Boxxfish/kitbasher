@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "yourproject-ml"
+name = "kitbasher-ml"
 version = "0.1.0"
 description = ""
 authors = ["Ben Giacalone <bensgiacalone@gmail.com>"]
 readme = "README.md"
-packages = [{include = "yourproject"}]
+packages = [{include = "kitbasher"}]
 
 [tool.poetry.dependencies]
 python = "^3.9"

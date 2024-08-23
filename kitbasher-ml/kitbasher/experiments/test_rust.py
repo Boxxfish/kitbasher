@@ -14,11 +14,11 @@ from gymnasium.vector import SyncVectorEnv
 from torch.distributions import Categorical
 from tqdm import tqdm
 
-from yourproject.algorithms.ppo import train_ppo
-from yourproject.algorithms.rollout_buffer import RolloutBuffer
-from yourproject.conf import entity
-from yourproject.utils import init_orthogonal
-from yourproject_rust import CartpoleEnv  # type: ignore
+from kitbasher.algorithms.ppo import train_ppo
+from kitbasher.algorithms.rollout_buffer import RolloutBuffer
+from kitbasher.conf import entity
+from kitbasher.utils import init_orthogonal
+from kitbasher_rust import CartpoleEnv  # type: ignore
 
 _: Any
 
