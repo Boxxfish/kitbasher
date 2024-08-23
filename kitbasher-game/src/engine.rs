@@ -1,3 +1,6 @@
+use bevy::math::{Quat, Vec3};
+use serde::{Deserialize, Serialize};
+
 /// An instance of the kitbasher engine.
 pub struct KBEngine {}
 
@@ -26,8 +29,49 @@ impl KBEngine {
     pub fn clear_model(&mut self) {}
 }
 
+/// AABB bounding box.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AABB {
+    pub center: Vec3,
+    pub half_sizes: Vec3,
+}
+
+/// Denotes an axis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Axis {
+    X,
+    Y,
+    Z
+}
+
+/// Information on how parts can snap to each other.
+/// Connectors can either be "out" or "in", and are locked to an X, Y, and Z axis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Connector {
+    pub is_in: bool,
+    pub axis: Axis,
+    pub connect_type: usize,
+}
+
+
 /// Basic data for a part.
-pub struct PartData {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartData {
+    pub bbox: AABB,
+    pub model_path: String,
+    pub connectors: Vec<Connector>,
+}
 
 /// A part's configuration after being placed.
-pub struct PlacedConfig {}
+pub struct PlacedConfig {
+    pub bbox: AABB,
+    pub part_id: usize,
+    pub rotation: Quat,
+    pub connections: Vec<Connection>,
+}
+
+/// Describes another part's connector.
+pub struct Connection {
+    pub placed_id: usize,
+    pub connector_id: usize,
+}

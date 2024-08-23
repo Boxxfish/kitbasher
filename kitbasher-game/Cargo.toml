@@ -17,3 +17,5 @@ opt-level = 3
 [dependencies]
 bevy = { version = "0.12.0", features = ["wayland"] }
 rand = "0.8.5"
+ron = "0.8.1"
+serde = { version = "1.0.208", features = ["derive"] }
