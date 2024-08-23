@@ -3,6 +3,7 @@ use configs::ReleaseCfgPlugin;
 
 mod cartpole;
 mod configs;
+mod engine;
 
 /// Main entry point for our game.
 fn main() {
