@@ -1,0 +1,24 @@
+(
+    bboxes: [],
+    model_path: "./models/2x1_slanted.glb",
+    connectors: [
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, 3.0, -2.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, -3.0, -2.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, -3.0, 2.5),
+        ),
+    ],
+)

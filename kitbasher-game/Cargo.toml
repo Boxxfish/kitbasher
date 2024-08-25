@@ -13,9 +13,13 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
+[[bin]]
+name = "gen_metadata"
+path = "src/gen_metadata.rs"
 
 [dependencies]
 bevy = { version = "0.12.0", features = ["wayland"] }
+gltf = "1.4.1"
 rand = "0.8.5"
 ron = "0.8.1"
 serde = { version = "1.0.208", features = ["derive"] }

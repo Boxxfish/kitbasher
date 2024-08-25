@@ -1,0 +1,23 @@
+(
+    bboxes: [
+        (
+            center: (0.0, 0.0, 0.0),
+            half_sizes: (1.0, 1.0, 1.0),
+        ),
+    ],
+    model_path: "./models/wheel.glb",
+    connectors: [
+        (
+            side_a: true,
+            axis: X,
+            connect_type: 2,
+            position: (2.0, 0.0, 0.0),
+        ),
+        (
+            side_a: false,
+            axis: X,
+            connect_type: 2,
+            position: (-2.0, 0.0, 0.0),
+        ),
+    ],
+)

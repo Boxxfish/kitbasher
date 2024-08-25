@@ -1,0 +1,71 @@
+(
+    bboxes: [
+        (
+            center: (0.0, 0.0, 0.0),
+            half_sizes: (5.8663125, 2.8930225, 4.8505907),
+        ),
+    ],
+    model_path: "./models/2x2_axle.glb",
+    connectors: [
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (-2.5, 3.0, -2.5),
+        ),
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (-2.5, 3.0, 2.5),
+        ),
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (2.5, 3.0, -2.5),
+        ),
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (2.5, 3.0, 2.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (-2.5, -3.0000002, 2.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (-2.5, -2.9999998, -2.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (2.5, -3.0000002, 2.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (2.5, -2.9999998, -2.5),
+        ),
+        (
+            side_a: true,
+            axis: X,
+            connect_type: 1,
+            position: (6.0, 0.0, 0.0),
+        ),
+        (
+            side_a: false,
+            axis: X,
+            connect_type: 1,
+            position: (-6.0, 0.0, 0.0),
+        ),
+    ],
+)

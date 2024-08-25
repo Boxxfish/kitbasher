@@ -6,7 +6,7 @@ pub struct KBEngine {}
 
 impl KBEngine {
     /// Creates a new instance of the engine.
-    pub fn new(_parts: &[PartData]) -> Self {
+    pub fn new(_parts: &[PartData], _connect_rules: &[[usize; 2]]) -> Self {
         Self {}
     }
 
@@ -45,26 +45,28 @@ pub enum Axis {
 }
 
 /// Information on how parts can snap to each other.
-/// Connectors can either be "out" or "in", and are locked to an X, Y, and Z axis.
+/// Connectors are locked to an X, Y, and Z axis, and can be on side A or B
+/// Two connectors with the same axis, different sides, and compatible connector types can be joined.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Connector {
-    pub is_in: bool,
+    pub side_a: bool,
     pub axis: Axis,
     pub connect_type: usize,
+    pub position: Vec3,
 }
 
 
 /// Basic data for a part.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartData {
-    pub bbox: AABB,
+    pub bboxes: Vec<AABB>,
     pub model_path: String,
     pub connectors: Vec<Connector>,
 }
 
 /// A part's configuration after being placed.
 pub struct PlacedConfig {
-    pub bbox: AABB,
+    pub position: Vec3,
     pub part_id: usize,
     pub rotation: Quat,
     pub connections: Vec<Connection>,
