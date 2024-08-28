@@ -4,14 +4,14 @@ use std::time::Duration;
 
 use bevy::{input::InputPlugin, prelude::*, scene::ScenePlugin, time::TimeUpdateStrategy};
 
-use crate::cartpole::{CartpolePlayPlugin, CartpolePlugin};
+use crate::viewer::ViewerPlugin;
 
 /// Handles core functionality for our game (i.e. gameplay logic).
 pub struct CoreGamePlugin;
 
 impl Plugin for CoreGamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(CartpolePlugin);
+        app.add_plugins(ViewerPlugin);
     }
 }
 
@@ -22,12 +22,11 @@ impl Plugin for PlayablePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Your Project (Game)".into(),
+                title: "Kitbasher".into(),
                 ..default()
             }),
             ..default()
-        }))
-        .add_plugins(CartpolePlayPlugin);
+        }));
     }
 }
 
@@ -36,7 +35,7 @@ pub struct ReleaseCfgPlugin;
 
 impl Plugin for ReleaseCfgPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((CoreGamePlugin, PlayablePlugin));
+        app.add_plugins((PlayablePlugin, CoreGamePlugin));
     }
 }
 

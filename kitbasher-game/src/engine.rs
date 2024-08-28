@@ -1,4 +1,8 @@
-use bevy::math::{Quat, Vec3};
+use bevy::{
+    asset::Asset,
+    math::{Quat, Vec3},
+    reflect::TypePath,
+};
 use serde::{Deserialize, Serialize};
 
 /// An instance of the kitbasher engine.
@@ -16,6 +20,11 @@ impl KBEngine {
             connect_rules: connect_rules.into(),
             model: Vec::new(),
         }
+    }
+
+    /// Adds a new part.
+    pub fn add_part(&mut self, part: &PartData) {
+        self.parts.push(part.clone());
     }
 
     /// Returns the set of valid next placements.
@@ -134,8 +143,7 @@ impl KBEngine {
                         ]))
                     {
                         let conn_world_pos = placed.position + placed_connector.position;
-                        let part_world_pos =  conn_world_pos - part_connector.position;
-						println!("{}", part_world_pos);
+                        let part_world_pos = conn_world_pos - part_connector.position;
                         // Check that new part doesn't intersect with any other parts
                         let mut intersected = false;
                         'check_bbox: for placed in &self.model {
@@ -198,7 +206,7 @@ impl KBEngine {
                     });
             }
         }
-		self.model.push(placement.clone());
+        self.model.push(placement.clone());
     }
 
     /// Returns the current model.
@@ -256,7 +264,7 @@ pub struct Connector {
 }
 
 /// Basic data for a part.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bevy::asset::Asset, TypePath)]
 pub struct PartData {
     pub bboxes: Vec<AABB>,
     pub model_path: String,

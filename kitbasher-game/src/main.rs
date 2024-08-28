@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use configs::ReleaseCfgPlugin;
 
-mod cartpole;
 mod configs;
 mod engine;
+mod viewer;
 
 /// Main entry point for our game.
 fn main() {
