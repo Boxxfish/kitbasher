@@ -249,14 +249,21 @@ fn render_placed(placed_query: Query<&PlacedWrapper>, mut gizmo: Gizmos) {
         }
         // Connectors
         for connector in &placed.0.connectors {
-            gizmo.sphere(
+            gizmo.arrow(
                 placed.0.position + connector.position,
-                Quat::IDENTITY,
-                1.,
+                placed.0.position
+                    + connector.position
+                    + if connector.side_a { 1. } else { -1. }
+                        * match connector.axis {
+                            crate::engine::Axis::X => Vec3::X,
+                            crate::engine::Axis::Y => Vec3::Y,
+                            crate::engine::Axis::Z => Vec3::Z,
+                        }
+                        * 2.,
                 if connector.side_a {
                     css::YELLOW
                 } else {
-                    css::PURPLE
+                    css::BLUE
                 },
             );
         }

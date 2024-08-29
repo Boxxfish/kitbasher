@@ -2,7 +2,7 @@
     bboxes: [
         (
             center: (0.0, 0.0, 0.0),
-            half_sizes: (5.8663125, 2.8930225, 4.8505907),
+            half_sizes: (5.395602, 2.8930225, 4.8505907),
         ),
     ],
     model_path: "./assets/models/2x2_axle.glb",

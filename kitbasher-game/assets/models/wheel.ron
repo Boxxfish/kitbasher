@@ -2,7 +2,7 @@
     bboxes: [
         (
             center: (0.0, 0.0, 0.0),
-            half_sizes: (1.0, 1.0, 1.0),
+            half_sizes: (1.7964443, 8.900764, 8.721526),
         ),
     ],
     model_path: "./assets/models/wheel.glb",

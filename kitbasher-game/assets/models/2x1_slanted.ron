@@ -1,5 +1,10 @@
 (
-    bboxes: [],
+    bboxes: [
+        (
+            center: (0.0, 0.0, 0.0),
+            half_sizes: (1.0, 1.0, 1.0),
+        ),
+    ],
     model_path: "./assets/models/2x1_slanted.glb",
     connectors: [
         (

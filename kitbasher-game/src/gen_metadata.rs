@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use bevy::math::{Mat4, Vec3};
+use bevy::math::{Mat4, Vec3, Vec4Swizzles};
 use engine::{Axis, Connector, PartData, AABB};
 use ron::ser::PrettyConfig;
 
@@ -24,8 +24,9 @@ fn main() {
                     if name.starts_with('C') {
                         let connect_type = name.split('_').collect::<Vec<_>>()[1].parse().unwrap();
                         let matrix = Mat4::from_cols_array_2d(&node.transform().matrix());
-                        let (_, rot, position) = matrix.to_scale_rotation_translation();
-                        let rotated_dir = rot.mul_vec3(Vec3::Y);
+                        let xformed_dir = matrix.mul_vec4(Vec3::Y.extend(1.)).xyz();
+                        let position = matrix.mul_vec4(Vec3::ZERO.extend(1.)).xyz();
+                        let rotated_dir = (xformed_dir - position).normalize();
                         for (axis, dir, side_a) in [
                             (Axis::X, Vec3::X, true),
                             (Axis::X, -Vec3::X, false),

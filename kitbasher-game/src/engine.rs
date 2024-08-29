@@ -63,17 +63,19 @@ impl KBEngine {
     ) -> Vec<PlacedConfig> {
         let mut configs = Vec::new();
         // Rotate part
-        let mut connectors = Vec::new();
-        for connector in &part.connectors {
-            let mut axis = connector.axis;
-            let mut side_a = connector.side_a;
-            let mut position = connector.position;
-            for (axis_type, num_turns) in [(Axis::X, x_rot), (Axis::Z, z_rot), (Axis::Y, y_rot)] {
-                let normal = match axis_type {
-                    Axis::X => Vec3::X,
-                    Axis::Y => Vec3::Y,
-                    Axis::Z => Vec3::Z,
-                };
+        for (axis_type, num_turns) in [
+            // (Axis::X, x_rot), (Axis::Z, z_rot), 
+            (Axis::Y, y_rot)] {
+            let normal = match axis_type {
+                Axis::X => Vec3::X,
+                Axis::Y => Vec3::Y,
+                Axis::Z => Vec3::Z,
+            };
+            let mut connectors = Vec::new();
+            for connector in &part.connectors {
+                let mut axis = connector.axis;
+                let mut side_a = connector.side_a;
+                let mut position = connector.position;
                 let rot = Quat::from_axis_angle(normal, std::f32::consts::PI / 2.);
                 let (axis1, axis2) = match axis_type {
                     Axis::X => (Axis::Z, Axis::Y),
@@ -96,25 +98,18 @@ impl KBEngine {
                     };
                     position = rot.mul_vec3(position);
                 }
-            }
-            let new_connector = Connector {
-                side_a,
-                axis,
-                connect_type: connector.connect_type,
-                position,
-            };
-            connectors.push(new_connector);
-        }
-        let mut bboxes = Vec::new();
-        for bbox in &part.bboxes {
-            let mut center = bbox.center;
-            let mut half_sizes = bbox.half_sizes;
-            for (axis_type, num_turns) in [(Axis::X, x_rot), (Axis::Z, z_rot), (Axis::Y, y_rot)] {
-                let normal = match axis_type {
-                    Axis::X => Vec3::X,
-                    Axis::Y => Vec3::Y,
-                    Axis::Z => Vec3::Z,
+                let new_connector = Connector {
+                    side_a,
+                    axis,
+                    connect_type: connector.connect_type,
+                    position,
                 };
+                connectors.push(new_connector);
+            }
+            let mut bboxes = Vec::new();
+            for bbox in &part.bboxes {
+                let mut center = bbox.center;
+                let mut half_sizes = bbox.half_sizes;
                 let rot = Quat::from_axis_angle(normal, std::f32::consts::PI / 2.);
                 for _ in 0..num_turns {
                     center = rot.mul_vec3(center);
@@ -124,71 +119,76 @@ impl KBEngine {
                         Axis::Z => Vec3::new(half_sizes.y, half_sizes.x, half_sizes.z),
                     }
                 }
+                let new_bbox = AABB { center, half_sizes };
+                bboxes.push(new_bbox);
             }
-            let new_bbox = AABB { center, half_sizes };
-            bboxes.push(new_bbox);
-        }
-        let new_part = PartData {
-            bboxes,
-            model_path: part.model_path.clone(),
-            connectors,
-        };
-        // Check if part can be attached to existing parts
-        for (placed_id, placed) in self.model.iter().enumerate() {
-            for (placed_connector_id, placed_connector) in placed.connectors.iter().enumerate() {
-                for (part_connector_id, part_connector) in new_part.connectors.iter().enumerate() {
-                    if part_connector.axis == placed_connector.axis
-                        && part_connector.side_a != placed_connector.side_a
-                        && (self.connect_rules.contains(&[
-                            part_connector.connect_type,
-                            placed_connector.connect_type,
-                        ]) || self.connect_rules.contains(&[
-                            placed_connector.connect_type,
-                            part_connector.connect_type,
-                        ]))
+            let new_part = PartData {
+                bboxes,
+                model_path: part.model_path.clone(),
+                connectors,
+            };
+            // Check if part can be attached to existing parts
+            for (placed_id, placed) in self.model.iter().enumerate() {
+                for (placed_connector_id, placed_connector) in placed.connectors.iter().enumerate()
+                {
+                    for (part_connector_id, part_connector) in
+                        new_part.connectors.iter().enumerate()
                     {
-                        let conn_world_pos = placed.position + placed_connector.position;
-                        let part_world_pos = conn_world_pos - part_connector.position;
-                        // Check that new part doesn't intersect with any other parts
-                        let mut intersected = false;
-                        'check_bbox: for placed in &self.model {
-                            for placed_bbox in &placed.bboxes {
-                                for part_bbox in &new_part.bboxes {
-                                    let mut part_bbox = *part_bbox;
-                                    part_bbox.center += part_world_pos;
-                                    if placed_bbox.intersects(&part_bbox) {
-                                        intersected = true;
-                                        break 'check_bbox;
+                        if part_connector.axis == placed_connector.axis
+                            && part_connector.side_a != placed_connector.side_a
+                            && (self.connect_rules.contains(&[
+                                part_connector.connect_type,
+                                placed_connector.connect_type,
+                            ]) || self.connect_rules.contains(&[
+                                placed_connector.connect_type,
+                                part_connector.connect_type,
+                            ]))
+                        {
+                            let conn_world_pos = placed.position + placed_connector.position;
+                            let part_world_pos = conn_world_pos - part_connector.position;
+                            // Check that new part doesn't intersect with any other parts
+                            let mut intersected = false;
+                            'check_bbox: for placed in &self.model {
+                                for placed_bbox in &placed.bboxes {
+                                    for part_bbox in &new_part.bboxes {
+                                        let mut part_bbox = *part_bbox;
+                                        part_bbox.center += part_world_pos;
+                                        if placed_bbox.intersects(&part_bbox) {
+                                            intersected = true;
+                                            break 'check_bbox;
+                                        }
                                     }
                                 }
                             }
+                            if intersected {
+                                continue;
+                            }
+                            let mut connections = vec![None; new_part.connectors.len()];
+                            connections[part_connector_id] = Some(Connection {
+                                placed_id,
+                                connector_id: placed_connector_id,
+                            });
+                            let new_placed = PlacedConfig {
+                                position: part_world_pos,
+                                part_id,
+                                rotation:
+                                //  Quat::from_axis_angle(
+                                //     Vec3::X,
+                                //     x_rot as f32 * (std::f32::consts::PI / 2.),
+                                // ) * Quat::from_axis_angle(
+                                //     Vec3::Z,
+                                //     z_rot as f32 * (std::f32::consts::PI / 2.),
+                                // ) * 
+                                Quat::from_axis_angle(
+                                    Vec3::Y,
+                                    y_rot as f32 * (std::f32::consts::PI / 2.),
+                                ),
+                                connectors: new_part.connectors.clone(),
+                                bboxes: new_part.bboxes.clone(),
+                                connections,
+                            };
+                            configs.push(new_placed);
                         }
-                        if intersected {
-                            continue;
-                        }
-                        let mut connections = vec![None; new_part.connectors.len()];
-                        connections[part_connector_id] = Some(Connection {
-                            placed_id,
-                            connector_id: placed_connector_id,
-                        });
-                        let new_placed = PlacedConfig {
-                            position: part_world_pos,
-                            part_id,
-                            rotation: Quat::from_axis_angle(
-                                Vec3::X,
-                                x_rot as f32 * (std::f32::consts::PI / 2.),
-                            ) * Quat::from_axis_angle(
-                                Vec3::Z,
-                                z_rot as f32 * (std::f32::consts::PI / 2.),
-                            ) * Quat::from_axis_angle(
-                                Vec3::Y,
-                                y_rot as f32 * (std::f32::consts::PI / 2.),
-                            ),
-                            connectors: new_part.connectors.clone(),
-                            bboxes: new_part.bboxes.clone(),
-                            connections,
-                        };
-                        configs.push(new_placed);
                     }
                 }
             }
