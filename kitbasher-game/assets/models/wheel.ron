@@ -5,7 +5,7 @@
             half_sizes: (1.0, 1.0, 1.0),
         ),
     ],
-    model_path: "./models/wheel.glb",
+    model_path: "./assets/models/wheel.glb",
     connectors: [
         (
             side_a: true,

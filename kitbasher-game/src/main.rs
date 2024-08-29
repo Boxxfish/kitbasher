@@ -4,6 +4,7 @@ use configs::ReleaseCfgPlugin;
 mod configs;
 mod engine;
 mod viewer;
+mod ui;
 
 /// Main entry point for our game.
 fn main() {

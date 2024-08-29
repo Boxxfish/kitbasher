@@ -27,6 +27,11 @@ impl KBEngine {
         self.parts.push(part.clone());
     }
 
+    /// Returns a part by its ID.
+    pub fn get_part(&self, id: usize) -> &PartData {
+        &self.parts[id]
+    }
+
     /// Returns the set of valid next placements.
     pub fn gen_candidates(&self) -> Vec<PlacedConfig> {
         let mut configs = Vec::new();

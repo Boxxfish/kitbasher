@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use bevy::{input::InputPlugin, prelude::*, scene::ScenePlugin, time::TimeUpdateStrategy};
 
-use crate::viewer::ViewerPlugin;
+use crate::{ui::UIPlugin, viewer::ViewerPlugin};
 
 /// Handles core functionality for our game (i.e. gameplay logic).
 pub struct CoreGamePlugin;
@@ -26,7 +26,7 @@ impl Plugin for PlayablePlugin {
                 ..default()
             }),
             ..default()
-        }));
+        })).add_plugins(UIPlugin);
     }
 }
 

@@ -1,6 +1,6 @@
 (
     bboxes: [],
-    model_path: "./models/2x1_slanted.glb",
+    model_path: "./assets/models/2x1_slanted.glb",
     connectors: [
         (
             side_a: true,

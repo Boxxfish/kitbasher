@@ -5,7 +5,7 @@
             half_sizes: (2.4196918, 2.949683, 4.890959),
         ),
     ],
-    model_path: "./models/2x1.glb",
+    model_path: "./assets/models/2x1.glb",
     connectors: [
         (
             side_a: true,
