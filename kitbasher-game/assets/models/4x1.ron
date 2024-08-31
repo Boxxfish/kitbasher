@@ -1,0 +1,59 @@
+(
+    bboxes: [
+        (
+            center: (0.0, 0.0, 0.0),
+            half_sizes: (2.4008982, 2.9332652, 9.903727),
+        ),
+    ],
+    model_path: "./assets/models/4x1.glb",
+    connectors: [
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, 3.0, -7.5),
+        ),
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, 3.0, -2.5),
+        ),
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, 3.0, 2.5),
+        ),
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, 3.0, 7.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, -3.0, -7.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, -3.0, -2.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, -3.0, 2.5),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, -3.0, 7.5),
+        ),
+    ],
+)

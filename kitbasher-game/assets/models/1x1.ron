@@ -1,0 +1,23 @@
+(
+    bboxes: [
+        (
+            center: (0.0, 0.0, 0.0),
+            half_sizes: (2.4386292, 2.9642825, 2.4386292),
+        ),
+    ],
+    model_path: "./assets/models/1x1.glb",
+    connectors: [
+        (
+            side_a: true,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, 3.0026248, 0.0),
+        ),
+        (
+            side_a: false,
+            axis: Y,
+            connect_type: 0,
+            position: (0.0, -2.9973752, 0.0),
+        ),
+    ],
+)
