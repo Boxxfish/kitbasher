@@ -2,7 +2,7 @@
     bboxes: [
         (
             center: (0.0, 0.0, 0.0),
-            half_sizes: (1.0, 1.0, 1.0),
+            half_sizes: (2.4008982, 2.9332652, 9.903727),
         ),
     ],
     model_path: "./assets/models/4x1.glb",

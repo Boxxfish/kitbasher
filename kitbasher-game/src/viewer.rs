@@ -64,7 +64,7 @@ fn setup_parts(mut commands: Commands, asset_server: Res<AssetServer>) {
         ));
     }
     commands.insert_resource(PartModels(part_models));
-    commands.insert_resource(KBEngineWrapper(KBEngine::new(&[], &[[0, 0]])));
+    commands.insert_resource(KBEngineWrapper(KBEngine::new(&[], &[[0, 0], [1, 2]])));
     commands.spawn((ModelRoot, SpatialBundle::default()));
 }
 
@@ -92,7 +92,7 @@ enum UIAction {
 fn setup_ui(mut commands: Commands) {
     commands
         .spawn((
-            Camera3dBundle { ..default() },
+            Camera3dBundle::default(),
             PanOrbitCamera {
                 radius: Some(100.),
                 ..default()
@@ -271,10 +271,13 @@ fn render_placed(placed_query: Query<&PlacedWrapper>, mut gizmo: Gizmos) {
 }
 
 fn move_camera(
+    mut config_store: ResMut<GizmoConfigStore>,
     input: Res<ButtonInput<KeyCode>>,
     mut orbit_query: Query<&mut PanOrbitCamera>,
     time: Res<Time>,
 ) {
+    let (config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
+    config.depth_bias = -0.001;
     if let Ok(mut orbit) = orbit_query.get_single_mut() {
         let speed = 10. * time.delta_seconds();
         if input.pressed(KeyCode::ArrowLeft) {

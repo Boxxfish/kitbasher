@@ -2,7 +2,7 @@
     bboxes: [
         (
             center: (0.0, 0.0, 0.0),
-            half_sizes: (1.0, 1.0, 1.0),
+            half_sizes: (2.3066566, 2.8034656, 4.8637304),
         ),
     ],
     model_path: "./assets/models/2x1_slanted.glb",
