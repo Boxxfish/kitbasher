@@ -42,12 +42,12 @@ impl KBEngine {
                     configs.extend(new_configs);
                 }
             }
-            // for z_rot in [1, 3] {
-            //     for y_rot in 0..4 {
-            //         let new_configs = self.rotate_and_gen_next(part_id, part, 0, y_rot, z_rot);
-            //         configs.extend(new_configs);
-            //     }
-            // }
+            for z_rot in [1, 3] {
+                for y_rot in 0..4 {
+                    let new_configs = self.rotate_and_gen_next(part_id, part, 0, y_rot, z_rot);
+                    configs.extend(new_configs);
+                }
+            }
         }
         configs
     }
