@@ -56,4 +56,7 @@
             position: (0.0, -3.0, 7.5),
         ),
     ],
+    invar_x: None,
+    invar_y: Some(2),
+    invar_z: None,
 )

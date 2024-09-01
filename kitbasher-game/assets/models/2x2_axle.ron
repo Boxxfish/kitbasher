@@ -68,4 +68,7 @@
             position: (-6.0, 0.0, 0.0),
         ),
     ],
+    invar_x: None,
+    invar_y: None,
+    invar_z: None,
 )
