@@ -213,7 +213,29 @@ impl KBEngine {
             }
         }
 
-        configs
+        // If any configurations share the same position and rotation, merge them
+        let mut merged_configs: Vec<PlacedConfig> = Vec::new();
+        for config in configs {
+            let mut merged = false;
+            for merged_config in &mut merged_configs {
+                if config.position.distance_squared(merged_config.position) < 0.01
+                    && config.rotation.angle_between(merged_config.rotation) < 0.01
+                {
+                    merged = true;
+                    for (i, connection) in config.connections.iter().copied().enumerate() {
+                        if let Some(connection) = connection {
+                            merged_config.connections[i] = Some(connection);
+                        }
+                    }
+                    break;
+                }
+            }
+            if !merged {
+                merged_configs.push(config);
+            }
+        }
+
+        merged_configs
     }
 
     /// Places a part on the model.
@@ -300,7 +322,7 @@ pub struct PartData {
 }
 
 /// A part's configuration after being placed.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PlacedConfig {
     pub position: Vec3,
     pub part_id: usize,
@@ -313,7 +335,7 @@ pub struct PlacedConfig {
 }
 
 /// Describes another part's connector.
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Connection {
     pub placed_id: usize,
     pub connector_id: usize,
@@ -361,5 +383,81 @@ mod tests {
         });
         let candidates = engine.gen_candidates();
         assert_eq!(candidates.len(), 2);
+    }
+
+    /// Tests that configurations with the same position and rotation get merged.
+    #[test]
+    fn merging() {
+        let parts = [PartData {
+            bboxes: vec![AABB {
+                center: Vec3::ZERO,
+                half_sizes: Vec3::splat(0.49),
+            }],
+            model_path: "".into(),
+            connectors: vec![
+                Connector {
+                    side_a: true,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(0.4, 0.5, 0.4),
+                },
+                Connector {
+                    side_a: true,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(0.4, 0.5, -0.4),
+                },
+                Connector {
+                    side_a: true,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(-0.4, 0.5, 0.4),
+                },
+                Connector {
+                    side_a: true,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(-0.4, 0.5, -0.4),
+                },
+                Connector {
+                    side_a: false,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(0.4, -0.5, 0.4),
+                },
+                Connector {
+                    side_a: false,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(0.4, -0.5, -0.4),
+                },
+                Connector {
+                    side_a: false,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(-0.4, -0.5, 0.4),
+                },
+                Connector {
+                    side_a: false,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(-0.4, -0.5, -0.4),
+                },
+            ],
+            invar_x: None,
+            invar_y: Some(1),
+            invar_z: None,
+        }];
+        let mut engine = KBEngine::new(&parts, &[[0, 0]]);
+        engine.place_part(&PlacedConfig {
+            position: Vec3::ZERO,
+            part_id: 0,
+            rotation: Quat::IDENTITY,
+            connectors: parts[0].connectors.clone(),
+            bboxes: parts[0].bboxes.clone(),
+            connections: vec![None; parts[0].connectors.len()],
+        });
+        let candidates = engine.gen_candidates();
+        assert_eq!(candidates.len(), 18);
     }
 }
