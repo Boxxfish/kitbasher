@@ -26,4 +26,7 @@
             position: (0.0, -3.0, 2.5),
         ),
     ],
+    invar_x: None,
+    invar_y: None,
+    invar_z: None,
 )

@@ -3,8 +3,19 @@ use std::io::Write;
 use bevy::math::{Mat4, Vec3, Vec4Swizzles};
 use engine::{Axis, Connector, PartData, AABB};
 use ron::ser::PrettyConfig;
+use serde::Deserialize;
 
 mod engine;
+
+#[derive(Deserialize, Default)]
+struct AdditionalData {
+    #[serde(default)]
+    invar_x: Option<i32>,
+    #[serde(default)]
+    invar_y: Option<i32>,
+    #[serde(default)]
+    invar_z: Option<i32>,
+}
 
 fn main() {
     let args: Vec<_> = std::env::args().collect();
@@ -15,6 +26,7 @@ fn main() {
     for path in &args[1..] {
         let mut connectors = Vec::new();
         let mut bboxes = Vec::new();
+        let mut data = AdditionalData::default();
 
         let (document, _, _) = gltf::import(path).unwrap();
         for scene in document.scenes() {
@@ -65,6 +77,12 @@ fn main() {
                             bboxes.push(aabb);
                         }
                     }
+                    // Extra data
+                    if name == "data" {
+                        if let Some(extras) = node.extras() {
+                            data = serde_json::de::from_str(extras.get()).unwrap();
+                        }
+                    }
                 }
             }
         }
@@ -73,6 +91,9 @@ fn main() {
             bboxes,
             model_path: path.to_owned(),
             connectors,
+            invar_x: data.invar_x,
+            invar_y: data.invar_y,
+            invar_z: data.invar_z,
         };
         let out_path = format!("{}.ron", path.split_at(path.len() - 4).0);
         let mut out_file = std::fs::File::create(out_path).unwrap();

@@ -1,5 +1,4 @@
 use bevy::{
-    asset::Asset,
     math::{Quat, Vec3},
     reflect::TypePath,
 };
@@ -37,17 +36,37 @@ impl KBEngine {
         let mut configs = Vec::new();
         for (part_id, part) in self.parts.iter().enumerate() {
             for x_rot in 0..4 {
+                if let Some(invar_x) = part.invar_x {
+                    if x_rot > invar_x - 1 {
+                        continue;
+                    }
+                }
                 for y_rot in 0..4 {
+                    if let Some(invar_y) = part.invar_y {
+                        if y_rot > invar_y - 1 {
+                            continue;
+                        }
+                    }
                     let new_configs = self.rotate_and_gen_next(part_id, part, x_rot, y_rot, 0);
                     configs.extend(new_configs);
                 }
             }
-            // for z_rot in [1, 3] {
-            //     for y_rot in 0..4 {
-            //         let new_configs = self.rotate_and_gen_next(part_id, part, 0, y_rot, z_rot);
-            //         configs.extend(new_configs);
-            //     }
-            // }
+            for z_rot in [1, 3] {
+                if let Some(invar_z) = part.invar_z {
+                    if z_rot > invar_z - 1 {
+                        continue;
+                    }
+                }
+                for y_rot in 0..4 {
+                    if let Some(invar_y) = part.invar_y {
+                        if y_rot > invar_y - 1 {
+                            continue;
+                        }
+                    }
+                    let new_configs = self.rotate_and_gen_next(part_id, part, 0, y_rot, z_rot);
+                    configs.extend(new_configs);
+                }
+            }
         }
         configs
     }
@@ -62,8 +81,6 @@ impl KBEngine {
         z_rot: i32,
     ) -> Vec<PlacedConfig> {
         let mut configs = Vec::new();
-        // Rotate part
-
         let mut connectors = Vec::new();
         for connector in &part.connectors {
             let mut axis = connector.axis;
@@ -129,6 +146,9 @@ impl KBEngine {
             bboxes,
             model_path: part.model_path.clone(),
             connectors,
+            invar_x: part.invar_x,
+            invar_y: part.invar_y,
+            invar_z: part.invar_z,
         };
         // Check if part can be attached to existing parts
         for (placed_id, placed) in self.model.iter().enumerate() {
@@ -193,7 +213,29 @@ impl KBEngine {
             }
         }
 
-        configs
+        // If any configurations share the same position and rotation, merge them
+        let mut merged_configs: Vec<PlacedConfig> = Vec::new();
+        for config in configs {
+            let mut merged = false;
+            for merged_config in &mut merged_configs {
+                if config.position.distance_squared(merged_config.position) < 0.01
+                    && config.rotation.angle_between(merged_config.rotation) < 0.01
+                {
+                    merged = true;
+                    for (i, connection) in config.connections.iter().copied().enumerate() {
+                        if let Some(connection) = connection {
+                            merged_config.connections[i] = Some(connection);
+                        }
+                    }
+                    break;
+                }
+            }
+            if !merged {
+                merged_configs.push(config);
+            }
+        }
+
+        merged_configs
     }
 
     /// Places a part on the model.
@@ -274,10 +316,13 @@ pub struct PartData {
     pub bboxes: Vec<AABB>,
     pub model_path: String,
     pub connectors: Vec<Connector>,
+    pub invar_x: Option<i32>,
+    pub invar_y: Option<i32>,
+    pub invar_z: Option<i32>,
 }
 
 /// A part's configuration after being placed.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PlacedConfig {
     pub position: Vec3,
     pub part_id: usize,
@@ -290,7 +335,7 @@ pub struct PlacedConfig {
 }
 
 /// Describes another part's connector.
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Connection {
     pub placed_id: usize,
     pub connector_id: usize,
@@ -323,6 +368,9 @@ mod tests {
                     position: Vec3::new(0., -0.5, 0.),
                 },
             ],
+            invar_x: None,
+            invar_y: Some(1),
+            invar_z: None,
         }];
         let mut engine = KBEngine::new(&parts, &[[0, 0]]);
         engine.place_part(&PlacedConfig {
@@ -335,5 +383,81 @@ mod tests {
         });
         let candidates = engine.gen_candidates();
         assert_eq!(candidates.len(), 2);
+    }
+
+    /// Tests that configurations with the same position and rotation get merged.
+    #[test]
+    fn merging() {
+        let parts = [PartData {
+            bboxes: vec![AABB {
+                center: Vec3::ZERO,
+                half_sizes: Vec3::splat(0.49),
+            }],
+            model_path: "".into(),
+            connectors: vec![
+                Connector {
+                    side_a: true,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(0.4, 0.5, 0.4),
+                },
+                Connector {
+                    side_a: true,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(0.4, 0.5, -0.4),
+                },
+                Connector {
+                    side_a: true,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(-0.4, 0.5, 0.4),
+                },
+                Connector {
+                    side_a: true,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(-0.4, 0.5, -0.4),
+                },
+                Connector {
+                    side_a: false,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(0.4, -0.5, 0.4),
+                },
+                Connector {
+                    side_a: false,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(0.4, -0.5, -0.4),
+                },
+                Connector {
+                    side_a: false,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(-0.4, -0.5, 0.4),
+                },
+                Connector {
+                    side_a: false,
+                    axis: Axis::Y,
+                    connect_type: 0,
+                    position: Vec3::new(-0.4, -0.5, -0.4),
+                },
+            ],
+            invar_x: None,
+            invar_y: Some(1),
+            invar_z: None,
+        }];
+        let mut engine = KBEngine::new(&parts, &[[0, 0]]);
+        engine.place_part(&PlacedConfig {
+            position: Vec3::ZERO,
+            part_id: 0,
+            rotation: Quat::IDENTITY,
+            connectors: parts[0].connectors.clone(),
+            bboxes: parts[0].bboxes.clone(),
+            connections: vec![None; parts[0].connectors.len()],
+        });
+        let candidates = engine.gen_candidates();
+        assert_eq!(candidates.len(), 18);
     }
 }

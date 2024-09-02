@@ -20,4 +20,7 @@
             position: (-2.0, 0.0, 0.0),
         ),
     ],
+    invar_x: Some(1),
+    invar_y: Some(2),
+    invar_z: None,
 )
