@@ -36,7 +36,7 @@ class PyPlacedConfig:
     rotation: PyQuat
     connectors: List[PyConnector]
     bboxes: List[PyAABB]
-    connection: List[Optional[PyConnection]]
+    connections: List[Optional[PyConnection]]
 
 class EngineWrapper:
     def __init__(self, part_paths: List[str], connect_rules: List[Tuple[int, int]]): ...
