@@ -62,9 +62,9 @@ impl From<PyQuat> for Quat {
 #[pyclass(eq, eq_int)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PyAxis {
-    X,
-    Y,
-    Z,
+    X = 0,
+    Y = 1,
+    Z = 2,
 }
 
 impl From<Axis> for PyAxis {
@@ -272,6 +272,23 @@ impl EngineWrapper {
 
     pub fn place_part(&mut self, placement: PyPlacedConfig) {
         self.engine.place_part(&placement.into());
+    }
+
+    pub fn create_config(&self, part_id: usize, x: f32, y: f32, z: f32) -> PyPlacedConfig {
+        let part = self.engine.get_part(part_id);
+        PyPlacedConfig {
+            position: PyVec3 { x, y, z },
+            part_id,
+            rotation: Quat::IDENTITY.into(),
+            connectors: part
+                .connectors
+                .clone()
+                .iter()
+                .map(|x| x.clone().into())
+                .collect(),
+            bboxes: part.bboxes.clone().iter().map(|x| (*x).into()).collect(),
+            connections: vec![None; part.connectors.len()],
+        }
     }
 }
 
