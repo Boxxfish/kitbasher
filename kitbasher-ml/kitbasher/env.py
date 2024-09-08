@@ -32,7 +32,7 @@ class ConstructionEnv(gym.Env):
         self.max_steps = max_steps
 
     def step(self, action: int) -> tuple[Data, float, bool, bool, dict[str, Any]]:
-        config = self.place_configs[action]
+        config = self.place_configs[action - len(self.model)]
         self.engine.place_part(config)
         self.timer += 1
         done = self.timer == self.max_steps
