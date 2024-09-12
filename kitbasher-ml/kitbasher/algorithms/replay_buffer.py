@@ -36,10 +36,10 @@ class ReplayBuffer:
         self.dones = torch.zeros([capacity], dtype=k, device=d, requires_grad=False)
         self.filled = False
         self.masks = torch.zeros(
-            action_masks_shape, dtype=torch.int, device=d, requires_grad=False
+            action_masks_shape, dtype=torch.bool, device=d, requires_grad=False
         )
         self.next_masks = torch.zeros(
-            action_masks_shape, dtype=torch.int, device=d, requires_grad=False
+            action_masks_shape, dtype=torch.bool, device=d, requires_grad=False
         )
 
     def insert_step(
@@ -73,9 +73,9 @@ class ReplayBuffer:
                 0, indices, torch.tensor(dones, dtype=torch.float, device=d)
             )
             if masks is not None:
-                self.masks.index_copy_(0, indices, masks.to(torch.int))
+                self.masks.index_copy_(0, indices, masks.to(torch.bool))
             if next_masks is not None:
-                self.next_masks.index_copy_(0, indices, next_masks.to(torch.int))
+                self.next_masks.index_copy_(0, indices, next_masks.to(torch.bool))
         self.next = (self.next + batch_size) % self.capacity
         if self.next == 0:
             self.filled = True
