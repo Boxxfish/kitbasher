@@ -8,12 +8,13 @@ though it can take longer to run.
 
 from argparse import ArgumentParser
 import copy
+import os
+from pathlib import Path
 import random
 from functools import reduce
 from typing import Any
 import gymnasium as gym
 
-import numpy as np
 import torch
 import torch.nn as nn
 import wandb
@@ -21,8 +22,8 @@ from gymnasium.envs.classic_control.cartpole import CartPoleEnv
 from tqdm import tqdm
 from safetensors.torch import save_model
 
-from .algorithms.dqn import train_dqn
-from .algorithms.replay_buffer import ReplayBuffer
+from kitbasher.algorithms.dqn import train_dqn
+from kitbasher.algorithms.replay_buffer import ReplayBuffer
 
 _: Any
 INF = 10**8
@@ -47,6 +48,7 @@ class Config:
     buffer_size: int = 10_000  # Number of elements that can be stored in the buffer.
     target_update: int = 500  # Number of iterations before updating Q target.
     save_every: int = 100
+    out_dir: str = "runs"
     device: str = "cuda"
 
 
@@ -79,18 +81,18 @@ class QNet(nn.Module):
 
 
 def get_action(q_net: nn.Module, obs: Any) -> tuple[int, float]:
-    q_vals = q_net(obs)
+    q_vals = q_net(obs).squeeze(0)
     action = q_vals.argmax(0).item()
     q_val = q_vals.amax(0).item()
     return action, q_val
 
 
 def process_obs(obs: Any) -> Any:
-    return obs
+    return torch.from_numpy(obs).unsqueeze(0)
 
 
 def process_act_masks(info: Any) -> torch.Tensor:
-    return info["action_mask"]
+    return torch.tensor([[0, 0]], dtype=torch.bool)#info["action_mask"]
 
 
 if __name__ == "__main__":
@@ -111,6 +113,27 @@ if __name__ == "__main__":
         project="kitbasher",
         config=cfg.__dict__,
     )
+
+    # Create out directory
+    assert wandb.run is not None
+    for _ in range(100):
+        if wandb.run.name != "":
+            break
+    if wandb.run.name != "":
+        out_id = wandb.run.name
+    else:
+        out_id = "testing"
+
+    out_dir = Path(cfg.out_dir)
+    try:
+        os.mkdir(out_dir / out_id)
+    except OSError as e:
+        print(e)
+    chkpt_path = out_dir / out_id / "checkpoints"
+    try:
+        os.mkdir(chkpt_path)
+    except OSError as e:
+        print(e)
 
     env = CartPoleEnv()
     test_env = CartPoleEnv()
@@ -147,13 +170,13 @@ if __name__ == "__main__":
                     action = act_space.sample()
                 else:
                     action, _ = get_action(q_net, obs)
-                obs_, reward, done, trunc, info_ = env.step(torch.tensor([action]))
-                next_obs = process_obs()
+                obs_, reward, done, trunc, info_ = env.step(action)
+                next_obs = process_obs(obs_)
                 next_mask = process_act_masks(info_)
                 buffer.insert_step(
                     obs,
                     next_obs,
-                    action,
+                    torch.tensor([action]),
                     [reward],
                     [done],
                     mask,
@@ -213,4 +236,7 @@ if __name__ == "__main__":
 
             # Save checkpoint
             if step % cfg.save_every == 0:
-                save_model(q_net, cfg.out_dir)
+                save_model(
+                    q_net,
+                    str(chkpt_path / f"q_net-{step}.safetensors"),
+                )
