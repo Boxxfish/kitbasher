@@ -2,6 +2,7 @@ from typing import Tuple
 
 import torch
 from torch import nn
+from torch_geometric.data import Batch # type: ignore
 
 from .replay_buffer import ReplayBuffer
 
@@ -34,8 +35,8 @@ def train_dqn(
         )
 
         # Move batch to device if applicable
-        prev_states = prev_states.to(device=device)
-        states = states.to(device=device)
+        prev_states = Batch(prev_states).to(device=device)
+        states = Batch(states).to(device=device)
         actions = actions.to(device=device)
         rewards = rewards.to(device=device)
         dones = dones.to(device=device)

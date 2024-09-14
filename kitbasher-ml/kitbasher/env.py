@@ -21,7 +21,7 @@ BLOCK_CONNECT_RULES = [(0, 0), (1, 2)]
 MAX_CONNECTIONS = 12
 CONNECTION_DIM = 3 + 3 + 3 + 1 + 1
 NODE_DIM = 6 + 4 + 1 + MAX_CONNECTIONS * CONNECTION_DIM
-
+MAX_NODES = 400
 
 class ConstructionEnv(gym.Env):
     def __init__(self, max_steps: Optional[int] = None) -> None:
@@ -30,6 +30,8 @@ class ConstructionEnv(gym.Env):
         self.place_configs: List[PyPlacedConfig] = []
         self.timer = 0
         self.max_steps = max_steps
+        self.observation_space = gym.spaces.Graph(node_space=gym.spaces.Box(-1, 1, [NODE_DIM]), edge_space=None)
+        self.action_space = gym.spaces.Discrete(MAX_NODES)
 
     def step(self, action: int) -> tuple[Data, float, bool, bool, dict[str, Any]]:
         config = self.place_configs[action - len(self.model)]
@@ -90,8 +92,11 @@ class ConstructionEnv(gym.Env):
             nodes.append(node_vec)
         x = torch.stack(nodes)
         edge_index = torch.tensor([list(e) for e in edges]).T.contiguous()
-        data = Data(x=x, edge_index=edge_index, part_ids=part_ids)
-        mask = torch.tensor([1] * len(self.model) + [0] * len(self.place_configs))
+        data = Data(x=x, edge_index=edge_index, part_ids=torch.tensor(part_ids))
+        mask_arr = [1] * len(self.model) + [0] * len(self.place_configs)
+        if len(mask_arr) >= MAX_NODES:
+            raise RuntimeError(f"Too many nodes, got {len(mask_arr)} nodes, max is {MAX_NODES}")
+        mask = torch.tensor(mask_arr)
         return data, mask
 
 

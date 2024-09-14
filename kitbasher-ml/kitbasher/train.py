@@ -1,11 +1,3 @@
-"""
-Experiment for checking that DQN works.
-
-The Deep Q Network (DQN) algorithm is a popular offline deep reinforcement
-learning algorithm. It's intuitive to understand, and it gets reliable results,
-though it can take longer to run.
-"""
-
 from argparse import ArgumentParser
 import copy
 import os
@@ -14,6 +6,11 @@ import random
 from functools import reduce
 from typing import Any
 import gymnasium as gym
+from torch_geometric.data import Data  # type: ignore
+from torch_geometric.nn.conv import GCNConv  # type: ignore
+from torch_geometric.nn import Sequential  # type: ignore
+from torch_geometric.nn import aggr
+from torch import Tensor
 
 import torch
 import torch.nn as nn
@@ -24,6 +21,7 @@ from safetensors.torch import save_model
 
 from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
+from kitbasher.env import ConstructionEnv
 
 _: Any
 INF = 10**8
@@ -48,51 +46,61 @@ class Config:
     buffer_size: int = 10_000  # Number of elements that can be stored in the buffer.
     target_update: int = 500  # Number of iterations before updating Q target.
     save_every: int = 100
+    max_steps: int = (
+        64  # Maximum number of steps that can be performed in the environment.
+    )
     out_dir: str = "runs"
     device: str = "cuda"
 
 
 class QNet(nn.Module):
-    def __init__(
-        self,
-        obs_shape: torch.Size,
-        action_count: int,
-    ):
+    def __init__(self, num_steps: int, node_feature_dim: int, hidden_dim: int):
         nn.Module.__init__(self)
-        flat_obs_dim = reduce(lambda e1, e2: e1 * e2, obs_shape, 1)
-        self.net = nn.Sequential(
-            nn.Linear(flat_obs_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 64),
-            nn.ReLU(),
-        )
-        self.relu = nn.ReLU()
+        self.encode = nn.Linear(node_feature_dim, hidden_dim)
+        process_layers = []
+        for _ in range(num_steps):
+            process_layers.append(GCNConv(hidden_dim, hidden_dim))
+            process_layers.append(nn.ReLU())
+        self.process = Sequential(*process_layers)
         self.advantage = nn.Sequential(
-            nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, action_count)
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
         )
-        self.value = nn.Sequential(nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 1))
-        self.action_count = action_count
+        self.mean_aggr = aggr.MeanAggregation()
+        self.value = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1)
+        )
 
-    def forward(self, input: torch.Tensor):
-        x = self.net(input)
-        advantage = self.advantage(x)
-        value = self.value(x)
-        return value + advantage - advantage.mean(1, keepdim=True)
+    def forward(self, data: Data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+        x = self.encode(x)  # Shape: (num_nodes, hidden_dim)
+        x = self.process(x, edge_index)  # Shape: (num_nodes, hidden_dim)
+        advantage = self.advantage(x)  # Shape: (num_nodes, 1)
+        advantage_mean = self.mean_aggr(advantage, batch)  # Shape: (num_batches, 1)
+        advantage_mean = torch.gather(
+            advantage_mean, 0, batch.unsqueeze(1)
+        )  # Shape: (num_nodes, 1)
+        value_x = self.mean_aggr(x, batch)  # Shape: (num_batches, hidden_dim)
+        value = self.value(value_x)  # Shape: (num_batches, 1)
+        value = torch.gather(value, 0, batch)  # Shape: (num_nodes, 1)
+        return value + advantage - advantage_mean
 
 
-def get_action(q_net: nn.Module, obs: Any) -> tuple[int, float]:
-    q_vals = q_net(obs).squeeze(0)
+def get_action(q_net: nn.Module, obs: Data, action_mask: Tensor) -> tuple[int, float]:
+    q_vals = q_net(obs).squeeze(0)  # Shape: (num_nodes)
+    q_vals = torch.masked_fill(q_vals, action_mask, -torch.inf)
     action = q_vals.argmax(0).item()
     q_val = q_vals.amax(0).item()
     return action, q_val
 
 
-def process_obs(obs: Any) -> Any:
-    return torch.from_numpy(obs).unsqueeze(0)
+def process_obs(obs: Data) -> Data:
+    return obs
 
 
 def process_act_masks(info: Any) -> torch.Tensor:
-    return torch.tensor([[0, 0]], dtype=torch.bool)#info["action_mask"]
+    return torch.tensor([[0, 0]], dtype=torch.bool)  # info["action_mask"]
 
 
 if __name__ == "__main__":
@@ -135,21 +143,22 @@ if __name__ == "__main__":
     except OSError as e:
         print(e)
 
-    env = CartPoleEnv()
-    test_env = CartPoleEnv()
+    env = ConstructionEnv(max_steps=cfg.max_steps)
+    test_env = ConstructionEnv()
 
     # Initialize Q network
     obs_space = env.observation_space
     act_space = env.action_space
+    assert isinstance(obs_space, gym.spaces.Graph)
+    assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
-    q_net = QNet(obs_space.shape, int(act_space.n))
+    q_net = QNet(3, obs_space.node_space.shape[0], 64)
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
     q_opt = torch.optim.Adam(q_net.parameters(), lr=cfg.q_lr)
 
     # A replay buffer stores experience collected over all sampling runs
     buffer = ReplayBuffer(
-        torch.Size(obs_space.shape),
         torch.Size((int(act_space.n),)),
         cfg.buffer_size,
     )
@@ -167,15 +176,15 @@ if __name__ == "__main__":
                     random.random() < cfg.q_epsilon * max(1.0 - percent_done, 0.05)
                     or step < cfg.warmup_steps
                 ):
-                    action = act_space.sample()
+                    action = int(act_space.sample(~mask.numpy()))
                 else:
-                    action, _ = get_action(q_net, obs)
+                    action, _ = get_action(q_net, obs, mask)
                 obs_, reward, done, trunc, info_ = env.step(action)
                 next_obs = process_obs(obs_)
                 next_mask = process_act_masks(info_)
                 buffer.insert_step(
-                    obs,
-                    next_obs,
+                    [obs],
+                    [next_obs],
                     torch.tensor([action]),
                     [reward],
                     [done],
@@ -200,15 +209,15 @@ if __name__ == "__main__":
 
             # Evaluate the network's performance after this training iteration.
             with torch.no_grad():
-                reward_total = 0
-                pred_reward_total = 0
+                reward_total = 0.0
+                pred_reward_total = 0.0
                 obs_, info = test_env.reset()
                 eval_obs = process_obs(obs_)
                 eval_mask = process_act_masks(info)
                 for _ in range(cfg.eval_steps):
                     steps_taken = 0
                     for _ in range(cfg.max_eval_steps):
-                        action, q_val = get_action(q_net, eval_obs)
+                        action, q_val = get_action(q_net, eval_obs, eval_mask)
                         pred_reward_total += q_val
                         obs_, reward, done, trunc, info = test_env.step(action)
                         eval_obs = eval_obs = process_obs(obs_)
