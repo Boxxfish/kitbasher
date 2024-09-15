@@ -4,8 +4,9 @@ import os
 from pathlib import Path
 import random
 from functools import reduce
-from typing import Any
+from typing import *
 import gymnasium as gym
+from kitbasher_rust import PyPlacedConfig
 from torch_geometric.data import Data  # type: ignore
 from torch_geometric.nn.conv import GCNConv  # type: ignore
 from torch_geometric.nn import Sequential  # type: ignore
@@ -48,6 +49,10 @@ class Config:
     save_every: int = 100
     max_steps: int = (
         64  # Maximum number of steps that can be performed in the environment.
+    )
+    score_fn: str = "volume"  # Score function to use. Choices: "volume", "clip".
+    use_potential: bool = (
+        False  # If true, the agent is rewarded by the change in scoring on each timestep. Otherwise, the reward is only given at the end.
     )
     out_dir: str = "runs"
     device: str = "cuda"
@@ -103,6 +108,27 @@ def process_act_masks(obs: Data) -> Tensor:
     return obs.action_mask
 
 
+def volume_fill_scorer(model: List[PyPlacedConfig]) -> float:
+    """
+    Grants a reward of 1 for every part that touches the volume.
+    """
+    cx, cy, cz = [0.0, 0.0, 0.0]
+    hx, hy, hz = [20.0, 10.0, 5.0]
+    score = 0
+    for placed in model:
+        part_score = 1
+        for bbox in placed.bboxes:
+            if (
+                abs(bbox.center.x - cx) > (hx + bbox.half_sizes.x)
+                or abs(bbox.center.y - cy) > (hy + bbox.half_sizes.y)
+                or abs(bbox.center.z - cz) > (hz + bbox.half_sizes.z)
+            ):
+                part_score = 0
+                break
+        score += part_score
+    return score
+
+
 if __name__ == "__main__":
     cfg = Config()
     parser = ArgumentParser()
@@ -143,8 +169,16 @@ if __name__ == "__main__":
     except OSError as e:
         print(e)
 
-    env = ConstructionEnv(max_steps=cfg.max_steps)
-    test_env = ConstructionEnv()
+    if cfg.score_fn == "volume":
+        score_fn = volume_fill_scorer
+    else:
+        raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
+    env = ConstructionEnv(
+        score_fn=score_fn, use_potential=cfg.use_potential, max_steps=cfg.max_steps
+    )
+    test_env = ConstructionEnv(
+        score_fn=score_fn, use_potential=cfg.use_potential, max_steps=cfg.max_steps
+    )
 
     # Initialize Q network
     obs_space = env.observation_space
@@ -183,11 +217,7 @@ if __name__ == "__main__":
                 next_obs = process_obs(obs_)
                 next_mask = process_act_masks(obs_)
                 buffer.insert_step(
-                    [obs],
-                    [next_obs],
-                    torch.tensor([action]),
-                    [reward],
-                    [done]
+                    [obs], [next_obs], torch.tensor([action]), [reward], [done]
                 )
                 obs = next_obs
                 mask = next_mask

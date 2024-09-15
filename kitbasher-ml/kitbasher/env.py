@@ -25,7 +25,7 @@ MAX_NODES = 400
 
 
 class ConstructionEnv(gym.Env):
-    def __init__(self, max_steps: Optional[int] = None) -> None:
+    def __init__(self, score_fn: Callable[[List[PyPlacedConfig]], float], use_potential: bool, max_steps: Optional[int] = None) -> None:
         self.engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES)
         self.model: List[PyPlacedConfig] = []
         self.place_configs: List[PyPlacedConfig] = []
@@ -35,6 +35,9 @@ class ConstructionEnv(gym.Env):
             node_space=gym.spaces.Box(-1, 1, [NODE_DIM]), edge_space=None
         )
         self.action_space = gym.spaces.Discrete(MAX_NODES)
+        self.score_fn = score_fn
+        self.use_potential = use_potential
+        self.last_score = 0.0
 
     def step(self, action: int) -> tuple[Data, float, bool, bool, dict[str, Any]]:
         config = self.place_configs[action - len(self.model)]
@@ -42,7 +45,16 @@ class ConstructionEnv(gym.Env):
         self.timer += 1
         done = self.timer == self.max_steps
         obs = self.gen_obs()
-        return obs, 0.0, done, False, {}
+        if self.use_potential:
+            new_score = self.score_fn(self.model)
+            reward = new_score - self.last_score
+            self.last_score = new_score
+        else:
+            # Reward at end
+            reward = 0.0
+            if done:
+                reward = self.score_fn(self.model)
+        return obs, reward, done, False, {}
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
@@ -52,6 +64,8 @@ class ConstructionEnv(gym.Env):
         self.engine.place_part(config)
         self.timer = 0
         obs = self.gen_obs()
+        if self.use_potential:
+            self.last_score = self.score_fn(self.model)
         return obs, {}
 
     def gen_obs(self) -> Data:
