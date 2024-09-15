@@ -99,8 +99,8 @@ def process_obs(obs: Data) -> Data:
     return obs
 
 
-def process_act_masks(info: Any) -> torch.Tensor:
-    return torch.tensor([[0, 0]], dtype=torch.bool)  # info["action_mask"]
+def process_act_masks(obs: Data) -> Tensor:
+    return obs.action_mask
 
 
 if __name__ == "__main__":
@@ -165,7 +165,7 @@ if __name__ == "__main__":
 
     obs_, info = env.reset()
     obs = process_obs(obs_)
-    mask = process_act_masks(info)
+    mask = process_act_masks(obs_)
     for step in tqdm(range(cfg.iterations), position=0):
         percent_done = step / cfg.iterations
 
@@ -181,15 +181,13 @@ if __name__ == "__main__":
                     action, _ = get_action(q_net, obs, mask)
                 obs_, reward, done, trunc, info_ = env.step(action)
                 next_obs = process_obs(obs_)
-                next_mask = process_act_masks(info_)
+                next_mask = process_act_masks(obs_)
                 buffer.insert_step(
                     [obs],
                     [next_obs],
                     torch.tensor([action]),
                     [reward],
-                    [done],
-                    mask,
-                    next_mask,
+                    [done]
                 )
                 obs = next_obs
                 mask = next_mask

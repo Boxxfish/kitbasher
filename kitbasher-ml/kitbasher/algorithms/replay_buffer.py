@@ -1,7 +1,7 @@
 """
 A replay buffer for use with off policy algorithms.
 """
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 from torch_geometric.data import Data # type: ignore
 
 import torch
@@ -32,12 +32,6 @@ class ReplayBuffer:
         # Technically this is the "terminated" flag
         self.dones = torch.zeros([capacity], dtype=k, device=d, requires_grad=False)
         self.filled = False
-        self.masks = torch.zeros(
-            action_masks_shape, dtype=torch.bool, device=d, requires_grad=False
-        )
-        self.next_masks = torch.zeros(
-            action_masks_shape, dtype=torch.bool, device=d, requires_grad=False
-        )
 
     def insert_step(
         self,
@@ -46,8 +40,6 @@ class ReplayBuffer:
         actions: torch.Tensor,
         rewards: List[float],
         dones: List[bool],
-        masks: Optional[torch.Tensor],
-        next_masks: Optional[torch.Tensor],
     ):
         """
         Inserts a transition from each environment into the buffer. Make sure
@@ -71,10 +63,6 @@ class ReplayBuffer:
             self.dones.index_copy_(
                 0, indices, torch.tensor(dones, dtype=torch.float, device=d)
             )
-            if masks is not None:
-                self.masks.index_copy_(0, indices, masks.to(torch.bool))
-            if next_masks is not None:
-                self.next_masks.index_copy_(0, indices, next_masks.to(torch.bool))
         self.next = (self.next + batch_size) % self.capacity
         if self.next == 0:
             self.filled = True
@@ -84,8 +72,6 @@ class ReplayBuffer:
     ) -> Tuple[
         List[Data],
         List[Data],
-        torch.Tensor,
-        torch.Tensor,
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,
@@ -108,14 +94,10 @@ class ReplayBuffer:
             rand_actions = self.actions.index_select(0, indices)
             rand_rewards = self.rewards.index_select(0, indices)
             rand_dones = self.dones.index_select(0, indices)
-            rand_masks = self.masks.index_select(0, indices)
-            rand_next_masks = self.next_masks.index_select(0, indices)
             return (
                 rand_states,
                 rand_next_states,
                 rand_actions,
                 rand_rewards,
                 rand_dones,
-                rand_masks,
-                rand_next_masks,
             )
