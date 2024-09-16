@@ -62,11 +62,13 @@ class QNet(nn.Module):
     def __init__(self, num_steps: int, node_feature_dim: int, hidden_dim: int):
         nn.Module.__init__(self)
         self.encode = nn.Linear(node_feature_dim, hidden_dim)
-        process_layers = []
+        process_layers: List[Union[Tuple[nn.Module, str], nn.Module]] = []
         for _ in range(num_steps):
-            process_layers.append(GCNConv(hidden_dim, hidden_dim))
+            process_layers.append(
+                (GCNConv(hidden_dim, hidden_dim), "x, edge_index -> x")
+            )
             process_layers.append(nn.ReLU())
-        self.process = Sequential(*process_layers)
+        self.process = Sequential("x, edge_index", process_layers)
         self.advantage = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -88,7 +90,7 @@ class QNet(nn.Module):
         )  # Shape: (num_nodes, 1)
         value_x = self.mean_aggr(x, batch)  # Shape: (num_batches, hidden_dim)
         value = self.value(value_x)  # Shape: (num_batches, 1)
-        value = torch.gather(value, 0, batch)  # Shape: (num_nodes, 1)
+        value = torch.gather(value, 0, batch.unsqueeze(1))  # Shape: (num_nodes, 1)
         return value + advantage - advantage_mean
 
 

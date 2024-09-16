@@ -38,8 +38,8 @@ def train_dqn(
         ) = buffer.sample(train_batch_size)
 
         # Move batch to device if applicable
-        prev_states = Batch(prev_states_).to(device=device)
-        states = Batch(states_).to(device=device)
+        prev_states = Batch.from_data_list(prev_states_).to(device=device)
+        states = Batch.from_data_list(states_).to(device=device)
         actions = actions.to(device=device)
         rewards = rewards.to(device=device)
         dones = dones.to(device=device)
