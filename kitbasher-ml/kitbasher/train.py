@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 import copy
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import random
@@ -7,6 +8,7 @@ from functools import reduce
 from typing import *
 import gymnasium as gym
 from kitbasher_rust import PyPlacedConfig
+import numpy as np
 from torch_geometric.data import Data  # type: ignore
 from torch_geometric.nn.conv import GCNConv  # type: ignore
 from torch_geometric.nn import Sequential  # type: ignore
@@ -29,6 +31,7 @@ INF = 10**8
 
 
 # Hyperparameters
+@dataclass
 class Config:
     train_steps: int = 1  # Number of steps to step through during sampling.
     iterations: int = 100000  # Number of sample/train iterations.
@@ -212,7 +215,7 @@ if __name__ == "__main__":
                     random.random() < cfg.q_epsilon * max(1.0 - percent_done, 0.05)
                     or step < cfg.warmup_steps
                 ):
-                    action = int(act_space.sample(~mask.numpy()))
+                    action = random.choice([i for i, b in enumerate((~mask.bool()).tolist()) if b])
                 else:
                     action, _ = get_action(q_net, obs, mask)
                 obs_, reward, done, trunc, info_ = env.step(action)
