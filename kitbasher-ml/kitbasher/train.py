@@ -1,35 +1,34 @@
-"""
-Experiment for checking that DQN works.
-
-The Deep Q Network (DQN) algorithm is a popular offline deep reinforcement
-learning algorithm. It's intuitive to understand, and it gets reliable results,
-though it can take longer to run.
-"""
-
 from argparse import ArgumentParser
 import copy
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import random
-from functools import reduce
-from typing import Any
+from typing import *
 import gymnasium as gym
+from kitbasher_rust import PyPlacedConfig
+from torch_geometric.data import Data, Batch  # type: ignore
+from torch_geometric.nn.conv import GCNConv  # type: ignore
+from torch_geometric.nn import Sequential  # type: ignore
+from torch_geometric.nn import aggr
+from torch import Tensor
 
 import torch
 import torch.nn as nn
 import wandb
-from gymnasium.envs.classic_control.cartpole import CartPoleEnv
 from tqdm import tqdm
 from safetensors.torch import save_model
 
 from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
+from kitbasher.env import ConstructionEnv
 
 _: Any
 INF = 10**8
 
 
 # Hyperparameters
+@dataclass
 class Config:
     train_steps: int = 1  # Number of steps to step through during sampling.
     iterations: int = 100000  # Number of sample/train iterations.
@@ -48,51 +47,89 @@ class Config:
     buffer_size: int = 10_000  # Number of elements that can be stored in the buffer.
     target_update: int = 500  # Number of iterations before updating Q target.
     save_every: int = 100
+    max_steps: int = (
+        64  # Maximum number of steps that can be performed in the environment.
+    )
+    score_fn: str = "volume"  # Score function to use. Choices: "volume", "clip".
+    use_potential: bool = (
+        False  # If true, the agent is rewarded by the change in scoring on each timestep. Otherwise, the reward is only given at the end.
+    )
+    eval_every: int = 100
     out_dir: str = "runs"
     device: str = "cuda"
 
 
 class QNet(nn.Module):
-    def __init__(
-        self,
-        obs_shape: torch.Size,
-        action_count: int,
-    ):
+    def __init__(self, num_steps: int, node_feature_dim: int, hidden_dim: int):
         nn.Module.__init__(self)
-        flat_obs_dim = reduce(lambda e1, e2: e1 * e2, obs_shape, 1)
-        self.net = nn.Sequential(
-            nn.Linear(flat_obs_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 64),
-            nn.ReLU(),
-        )
-        self.relu = nn.ReLU()
+        self.encode = nn.Linear(node_feature_dim, hidden_dim)
+        process_layers: List[Union[Tuple[nn.Module, str], nn.Module]] = []
+        for _ in range(num_steps):
+            process_layers.append(
+                (GCNConv(hidden_dim, hidden_dim), "x, edge_index -> x")
+            )
+            process_layers.append(nn.ReLU())
+        self.process = Sequential("x, edge_index", process_layers)
         self.advantage = nn.Sequential(
-            nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, action_count)
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
         )
-        self.value = nn.Sequential(nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 1))
-        self.action_count = action_count
+        self.mean_aggr = aggr.MeanAggregation()
+        self.value = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1)
+        )
 
-    def forward(self, input: torch.Tensor):
-        x = self.net(input)
-        advantage = self.advantage(x)
-        value = self.value(x)
-        return value + advantage - advantage.mean(1, keepdim=True)
+    def forward(self, data: Data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+        x = self.encode(x)  # Shape: (num_nodes, hidden_dim)
+        x = self.process(x, edge_index)  # Shape: (num_nodes, hidden_dim)
+        advantage = self.advantage(x)  # Shape: (num_nodes, 1)
+        advantage_mean = self.mean_aggr(advantage, batch)  # Shape: (num_batches, 1)
+        advantage_mean = torch.gather(
+            advantage_mean, 0, batch.unsqueeze(1)
+        )  # Shape: (num_nodes, 1)
+        value_x = self.mean_aggr(x, batch)  # Shape: (num_batches, hidden_dim)
+        value = self.value(value_x)  # Shape: (num_batches, 1)
+        value = torch.gather(value, 0, batch.unsqueeze(1))  # Shape: (num_nodes, 1)
+        return value + advantage - advantage_mean
 
 
-def get_action(q_net: nn.Module, obs: Any) -> tuple[int, float]:
-    q_vals = q_net(obs).squeeze(0)
+def get_action(q_net: nn.Module, obs: Data, action_mask: Tensor) -> tuple[int, float]:
+    q_vals = q_net(obs).squeeze(1)  # Shape: (num_nodes)
+    q_vals = torch.masked_fill(q_vals, action_mask, -torch.inf)
     action = q_vals.argmax(0).item()
     q_val = q_vals.amax(0).item()
     return action, q_val
 
 
-def process_obs(obs: Any) -> Any:
-    return torch.from_numpy(obs).unsqueeze(0)
+def process_obs(obs: Data) -> Batch:
+    return Batch.from_data_list([obs])
 
 
-def process_act_masks(info: Any) -> torch.Tensor:
-    return torch.tensor([[0, 0]], dtype=torch.bool)#info["action_mask"]
+def process_act_masks(obs: Data) -> Tensor:
+    return obs.action_mask
+
+
+def volume_fill_scorer(model: List[PyPlacedConfig]) -> float:
+    """
+    Grants a reward of 1 for every part that touches the volume.
+    """
+    cx, cy, cz = [0.0, 0.0, 0.0]
+    hx, hy, hz = [20.0, 10.0, 5.0]
+    score = 0
+    for placed in model:
+        part_score = 1
+        for bbox in placed.bboxes:
+            if (
+                abs(bbox.center.x - cx) > (hx + bbox.half_sizes.x)
+                or abs(bbox.center.y - cy) > (hy + bbox.half_sizes.y)
+                or abs(bbox.center.z - cz) > (hz + bbox.half_sizes.z)
+            ):
+                part_score = 0
+                break
+        score += part_score
+    return score
 
 
 if __name__ == "__main__":
@@ -135,28 +172,37 @@ if __name__ == "__main__":
     except OSError as e:
         print(e)
 
-    env = CartPoleEnv()
-    test_env = CartPoleEnv()
+    if cfg.score_fn == "volume":
+        score_fn = volume_fill_scorer
+    else:
+        raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
+    env = ConstructionEnv(
+        score_fn=score_fn, use_potential=cfg.use_potential, max_steps=cfg.max_steps
+    )
+    test_env = ConstructionEnv(
+        score_fn=score_fn, use_potential=cfg.use_potential, max_steps=cfg.max_steps
+    )
 
     # Initialize Q network
     obs_space = env.observation_space
     act_space = env.action_space
+    assert isinstance(obs_space, gym.spaces.Graph)
+    assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
-    q_net = QNet(obs_space.shape, int(act_space.n))
+    q_net = QNet(3, obs_space.node_space.shape[0], 64)
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
     q_opt = torch.optim.Adam(q_net.parameters(), lr=cfg.q_lr)
 
     # A replay buffer stores experience collected over all sampling runs
     buffer = ReplayBuffer(
-        torch.Size(obs_space.shape),
         torch.Size((int(act_space.n),)),
         cfg.buffer_size,
     )
 
     obs_, info = env.reset()
     obs = process_obs(obs_)
-    mask = process_act_masks(info)
+    mask = process_act_masks(obs_)
     for step in tqdm(range(cfg.iterations), position=0):
         percent_done = step / cfg.iterations
 
@@ -167,20 +213,20 @@ if __name__ == "__main__":
                     random.random() < cfg.q_epsilon * max(1.0 - percent_done, 0.05)
                     or step < cfg.warmup_steps
                 ):
-                    action = act_space.sample()
+                    action = random.choice(
+                        [i for i, b in enumerate((~mask.bool()).tolist()) if b]
+                    )
                 else:
-                    action, _ = get_action(q_net, obs)
+                    action, _ = get_action(q_net, obs, mask)
                 obs_, reward, done, trunc, info_ = env.step(action)
                 next_obs = process_obs(obs_)
-                next_mask = process_act_masks(info_)
+                next_mask = process_act_masks(obs_)
                 buffer.insert_step(
-                    obs,
-                    next_obs,
+                    [obs.to_data_list()[0]],
+                    [next_obs.to_data_list()[0]],
                     torch.tensor([action]),
                     [reward],
                     [done],
-                    mask,
-                    next_mask,
                 )
                 obs = next_obs
                 mask = next_mask
@@ -198,37 +244,43 @@ if __name__ == "__main__":
                 cfg.discount,
             )
 
-            # Evaluate the network's performance after this training iteration.
-            with torch.no_grad():
-                reward_total = 0
-                pred_reward_total = 0
-                obs_, info = test_env.reset()
-                eval_obs = process_obs(obs_)
-                eval_mask = process_act_masks(info)
-                for _ in range(cfg.eval_steps):
-                    steps_taken = 0
-                    for _ in range(cfg.max_eval_steps):
-                        action, q_val = get_action(q_net, eval_obs)
-                        pred_reward_total += q_val
-                        obs_, reward, done, trunc, info = test_env.step(action)
-                        eval_obs = eval_obs = process_obs(obs_)
-                        steps_taken += 1
-                        reward_total += reward
-                        if done or trunc:
-                            obs_, info = test_env.reset()
-                            eval_obs = process_obs(obs_)
-                            eval_mask = process_act_masks(info)
-                            break
+            log_dict = {
+                "avg_q_loss": total_q_loss / cfg.train_iters,
+                "q_lr": q_opt.param_groups[-1]["lr"],
+            }
 
-            wandb.log(
-                {
-                    "avg_eval_episode_reward": reward_total / cfg.eval_steps,
-                    "avg_eval_episode_predicted_reward": pred_reward_total
-                    / cfg.eval_steps,
-                    "avg_q_loss": total_q_loss / cfg.train_iters,
-                    "q_lr": q_opt.param_groups[-1]["lr"],
-                }
-            )
+            # Evaluate the network's performance after this training iteration.
+            if step % cfg.eval_every == 0:
+                with torch.no_grad():
+                    reward_total = 0.0
+                    pred_reward_total = 0.0
+                    obs_, _ = test_env.reset()
+                    eval_obs = process_obs(obs_)
+                    eval_mask = process_act_masks(obs_)
+                    for _ in range(cfg.eval_steps):
+                        steps_taken = 0
+                        for _ in range(cfg.max_eval_steps):
+                            action, q_val = get_action(q_net, eval_obs, eval_mask)
+                            pred_reward_total += q_val
+                            obs_, reward, done, trunc, _ = test_env.step(action)
+                            eval_obs = eval_obs = process_obs(obs_)
+                            eval_mask = process_act_masks(obs_)
+                            steps_taken += 1
+                            reward_total += reward
+                            if done or trunc:
+                                obs_, info = test_env.reset()
+                                eval_obs = process_obs(obs_)
+                                eval_mask = process_act_masks(obs_)
+                                break
+                log_dict.update(
+                    {
+                        "avg_eval_episode_reward": reward_total / cfg.eval_steps,
+                        "avg_eval_episode_predicted_reward": pred_reward_total
+                        / cfg.eval_steps,
+                    }
+                )
+
+            wandb.log(log_dict)
 
             # Update Q target
             if step % cfg.target_update == 0:
@@ -239,4 +291,8 @@ if __name__ == "__main__":
                 save_model(
                     q_net,
                     str(chkpt_path / f"q_net-{step}.safetensors"),
+                )
+                save_model(
+                    q_net,
+                    str(chkpt_path / f"q_net-latest.safetensors"),
                 )

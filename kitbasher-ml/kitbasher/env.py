@@ -21,23 +21,45 @@ BLOCK_CONNECT_RULES = [(0, 0), (1, 2)]
 MAX_CONNECTIONS = 12
 CONNECTION_DIM = 3 + 3 + 3 + 1 + 1
 NODE_DIM = 6 + 4 + 1 + MAX_CONNECTIONS * CONNECTION_DIM
+MAX_NODES = 10_000
 
 
 class ConstructionEnv(gym.Env):
-    def __init__(self, max_steps: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        score_fn: Callable[[List[PyPlacedConfig]], float],
+        use_potential: bool,
+        max_steps: Optional[int] = None,
+    ) -> None:
         self.engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES)
         self.model: List[PyPlacedConfig] = []
         self.place_configs: List[PyPlacedConfig] = []
         self.timer = 0
         self.max_steps = max_steps
+        self.observation_space = gym.spaces.Graph(
+            node_space=gym.spaces.Box(-1, 1, [NODE_DIM]), edge_space=None
+        )
+        self.action_space = gym.spaces.Discrete(MAX_NODES)
+        self.score_fn = score_fn
+        self.use_potential = use_potential
+        self.last_score = 0.0
 
     def step(self, action: int) -> tuple[Data, float, bool, bool, dict[str, Any]]:
         config = self.place_configs[action - len(self.model)]
         self.engine.place_part(config)
         self.timer += 1
         done = self.timer == self.max_steps
-        obs, mask = self.gen_obs()
-        return obs, 0.0, done, False, {"action_mask": mask}
+        obs = self.gen_obs()
+        if self.use_potential:
+            new_score = self.score_fn(self.model)
+            reward = new_score - self.last_score
+            self.last_score = new_score
+        else:
+            # Reward at end
+            reward = 0.0
+            if done:
+                reward = self.score_fn(self.model)
+        return obs, reward, done, False, {}
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
@@ -46,10 +68,12 @@ class ConstructionEnv(gym.Env):
         config = self.engine.create_config(5, 0, 0, 0)
         self.engine.place_part(config)
         self.timer = 0
-        obs, mask = self.gen_obs()
-        return obs, {"action_mask": mask}
+        obs = self.gen_obs()
+        if self.use_potential:
+            self.last_score = self.score_fn(self.model)
+        return obs, {}
 
-    def gen_obs(self) -> Tuple[Data, Tensor]:
+    def gen_obs(self) -> Data:
         self.model = self.engine.get_model()
         self.place_configs = self.engine.gen_candidates()
         part_ids = []
@@ -59,12 +83,12 @@ class ConstructionEnv(gym.Env):
             part_ids.append(config.part_id)
             min_bbox, max_bbox = merge_bboxes(config.bboxes)
             node_vec = torch.zeros([NODE_DIM])
-            node_vec[0] = min_bbox[0]
-            node_vec[1] = min_bbox[1]
-            node_vec[2] = min_bbox[2]
-            node_vec[3 + 0] = max_bbox[0]
-            node_vec[3 + 1] = max_bbox[1]
-            node_vec[3 + 2] = max_bbox[2]
+            node_vec[0] = min_bbox[0] / 10.0
+            node_vec[1] = min_bbox[1] / 10.0
+            node_vec[2] = min_bbox[2] / 10.0
+            node_vec[3 + 0] = max_bbox[0] / 10.0
+            node_vec[3 + 1] = max_bbox[1] / 10.0
+            node_vec[3 + 2] = max_bbox[2] / 10.0
             rot_start = 6
             node_vec[rot_start + 0] = config.rotation.x
             node_vec[rot_start + 1] = config.rotation.y
@@ -90,9 +114,18 @@ class ConstructionEnv(gym.Env):
             nodes.append(node_vec)
         x = torch.stack(nodes)
         edge_index = torch.tensor([list(e) for e in edges]).T.contiguous()
-        data = Data(x=x, edge_index=edge_index, part_ids=part_ids)
-        mask = torch.tensor([1] * len(self.model) + [0] * len(self.place_configs))
-        return data, mask
+        mask_arr = [1] * len(self.model) + [0] * len(self.place_configs)
+        if len(mask_arr) >= MAX_NODES:
+            raise RuntimeError(
+                f"Too many nodes, got {len(mask_arr)} nodes, max is {MAX_NODES}"
+            )
+        data = Data(
+            x=x,
+            edge_index=edge_index,
+            part_ids=torch.tensor(part_ids),
+            action_mask=torch.tensor(mask_arr),
+        )
+        return data
 
 
 def merge_bboxes(bboxes: List[PyAABB]) -> Tuple[List[float], List[float]]:
