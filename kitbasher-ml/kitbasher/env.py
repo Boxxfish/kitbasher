@@ -25,7 +25,12 @@ MAX_NODES = 10_000
 
 
 class ConstructionEnv(gym.Env):
-    def __init__(self, score_fn: Callable[[List[PyPlacedConfig]], float], use_potential: bool, max_steps: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        score_fn: Callable[[List[PyPlacedConfig]], float],
+        use_potential: bool,
+        max_steps: Optional[int] = None,
+    ) -> None:
         self.engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES)
         self.model: List[PyPlacedConfig] = []
         self.place_configs: List[PyPlacedConfig] = []
@@ -78,12 +83,12 @@ class ConstructionEnv(gym.Env):
             part_ids.append(config.part_id)
             min_bbox, max_bbox = merge_bboxes(config.bboxes)
             node_vec = torch.zeros([NODE_DIM])
-            node_vec[0] = min_bbox[0]
-            node_vec[1] = min_bbox[1]
-            node_vec[2] = min_bbox[2]
-            node_vec[3 + 0] = max_bbox[0]
-            node_vec[3 + 1] = max_bbox[1]
-            node_vec[3 + 2] = max_bbox[2]
+            node_vec[0] = min_bbox[0] / 10.0
+            node_vec[1] = min_bbox[1] / 10.0
+            node_vec[2] = min_bbox[2] / 10.0
+            node_vec[3 + 0] = max_bbox[0] / 10.0
+            node_vec[3 + 1] = max_bbox[1] / 10.0
+            node_vec[3 + 2] = max_bbox[2] / 10.0
             rot_start = 6
             node_vec[rot_start + 0] = config.rotation.x
             node_vec[rot_start + 1] = config.rotation.y
