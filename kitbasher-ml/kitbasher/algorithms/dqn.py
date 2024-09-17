@@ -2,7 +2,7 @@ from typing import Tuple
 
 import torch
 from torch import nn
-from torch_geometric import utils # type: ignore
+from torch_geometric import utils  # type: ignore
 from torch_geometric.data import Batch  # type: ignore
 
 from .replay_buffer import ReplayBuffer
@@ -45,18 +45,18 @@ def train_dqn(
         dones = dones.to(device=device)
 
         # Train q network
-        # TODO: Check every line of this
         q_opt.zero_grad()
-        prev_states_offsets = torch.tensor(
-            [len(s.batch) for s in prev_states], device=device
-        ).cumsum(
+        prev_states_offsets_ = [0] + [
+            s.x.shape[0] + 1 for s in prev_states.to_data_list()
+        ][:-1]
+        prev_states_offsets = torch.tensor(prev_states_offsets_, device=device).cumsum(
             0
         )  # Shape: (batch_size)
         with torch.no_grad():
             # Compute next actions
             q_vals = q_net(prev_states)  # Shape: (num_nodes, 1)
             q_vals = torch.masked_fill(
-                q_vals, prev_states.mask, -torch.inf
+                q_vals, prev_states.action_mask.bool().unsqueeze(1), -torch.inf
             )  # Shape: (num_nodes, 1)
             unbatched_q_vals = utils.unbatch(q_vals, prev_states.batch, dim=0)
             next_actions_ = []
@@ -65,12 +65,14 @@ def train_dqn(
                 action = q_vals.argmax(0).item()
                 next_actions_.append(offset + action)
                 offset += q_vals.shape[0]
-            next_actions = torch.tensor(next_actions_)  # Shape: (batch_size)
+            next_actions = torch.tensor(
+                next_actions_, device=device
+            )  # Shape: (batch_size)
             q_target = rewards.unsqueeze(1) + discount * q_net_target(
                 states
-            ).detach().gather(1, next_actions.unsqueeze(1)) * (1.0 - dones.unsqueeze(1))
+            ).detach().gather(0, next_actions.unsqueeze(1)) * (1.0 - dones.unsqueeze(1))
         diff = (
-            q_net(prev_states).gather(1, (prev_states_offsets + actions).unsqueeze(1))
+            q_net(prev_states).gather(0, (prev_states_offsets + actions).unsqueeze(1))
             - q_target
         )
         q_loss = (diff * diff).mean()
