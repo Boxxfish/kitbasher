@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "kitbasher"}]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "~3.9"
 torch = "2.0.0"
 tqdm = "^4.65.0"
 wandb = "^0.15.3"
@@ -17,6 +17,10 @@ types-tqdm = "^4.65.0.1"
 maturin = "^0.15.2"
 safetensors = "^0.4.2"
 torch-geometric = "^2.5.3"
+rerun-sdk = "^0.18.2"
+open3d = "^0.18.0"
+addict = "^2.4.0"
+pandas = "^2.2.2"
 
 
 [tool.poetry.group.dev.dependencies]

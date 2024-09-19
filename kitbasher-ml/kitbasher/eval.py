@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 from dataclasses import dataclass
+import random
 from typing import *
 import gymnasium as gym
 
@@ -44,7 +45,10 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     env = ConstructionEnv(
-        score_fn=score_fn, use_potential=cfg.use_potential, max_steps=cfg.max_steps
+        score_fn=score_fn,
+        use_potential=cfg.use_potential,
+        max_steps=cfg.max_steps,
+        visualize=True,
     )
 
     # Initialize Q network
@@ -56,11 +60,16 @@ if __name__ == "__main__":
     q_net = QNet(1, obs_space.node_space.shape[0], 4)
     with torch.no_grad():
         obs_, info = env.reset()
+        env.render()
         eval_obs = process_obs(obs_)
         eval_mask = process_act_masks(obs_)
         for _ in range(cfg.max_eval_steps):
-            action, q_val = get_action(q_net, eval_obs, eval_mask)
+            action = action = random.choice(
+                [i for i, b in enumerate((~eval_mask.bool()).tolist()) if b]
+            )
+            # action, q_val = get_action(q_net, eval_obs, eval_mask)
             obs_, reward, done, trunc, info = env.step(action)
+            env.render()
             eval_obs = eval_obs = process_obs(obs_)
             eval_mask = process_act_masks(obs_)
             if done or trunc:

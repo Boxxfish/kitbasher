@@ -1,10 +1,13 @@
 from typing import *
 import gymnasium as gym
 import gymnasium as gym
+import numpy as np
 import torch
 from torch import Tensor
 from kitbasher_rust import EngineWrapper, PyAABB, PyPlacedConfig
 from torch_geometric.data import Data  # type: ignore
+import rerun as rr  # type: ignore
+import open3d as o3d  # type: ignore
 
 BLOCK_PARTS = [
     "../kitbasher-game/assets/models/1x1.ron",
@@ -24,12 +27,42 @@ NODE_DIM = 6 + 4 + 1 + MAX_CONNECTIONS * CONNECTION_DIM
 MAX_NODES = 10_000
 
 
+class PartModel:
+    def __init__(self, path: str, part_index: int) -> None:
+        model = o3d.io.read_triangle_model(path)
+        self.vertices = np.asarray(model.meshes[0].mesh.vertices)
+        self.normals = np.asarray(model.meshes[0].mesh.vertex_normals)
+        self.triangles = np.asarray(model.meshes[0].mesh.triangles)
+        self.part_index = part_index
+        rr.log(
+            f"model/{self.part_index}",
+            rr.Mesh3D(
+                vertex_positions=self.vertices.tolist(),
+                vertex_normals=self.normals.tolist(),
+                triangle_indices=self.triangles.tolist(),
+            ),
+            rr.InstancePoses3D(
+                translations=[],
+            ),
+        )
+
+    def render(self, translations: List[List[float]], rotations: List[List[float]]):
+        rr.log(
+            f"model/{self.part_index}",
+            rr.InstancePoses3D(
+                translations=translations,
+                quaternions=rotations,
+            ),
+        )
+
+
 class ConstructionEnv(gym.Env):
     def __init__(
         self,
         score_fn: Callable[[List[PyPlacedConfig]], float],
         use_potential: bool,
         max_steps: Optional[int] = None,
+        visualize: bool = False,
     ) -> None:
         self.engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES)
         self.model: List[PyPlacedConfig] = []
@@ -43,6 +76,13 @@ class ConstructionEnv(gym.Env):
         self.score_fn = score_fn
         self.use_potential = use_potential
         self.last_score = 0.0
+        if visualize:
+            rr.init("Construction")
+            rr.spawn()
+            self.models: List[PartModel] = []
+            for i, path in enumerate(BLOCK_PARTS):
+                model = PartModel(path.replace(".ron", ".glb"), i)
+                self.models.append(model)
 
     def step(self, action: int) -> tuple[Data, float, bool, bool, dict[str, Any]]:
         config = self.place_configs[action - len(self.model)]
@@ -60,6 +100,17 @@ class ConstructionEnv(gym.Env):
             if done:
                 reward = self.score_fn(self.model)
         return obs, reward, done, False, {}
+
+    def render(self):
+        translations = [[] for _ in range(len(BLOCK_PARTS))]
+        rotations = [[] for _ in range(len(BLOCK_PARTS))]
+        for placed in self.model:
+            pos = placed.position
+            translations[placed.part_id].append([pos.x, pos.y, pos.z])
+            rot = placed.rotation
+            rotations[placed.part_id].append([rot.x, rot.y, rot.z, rot.w])
+        for i, model in enumerate(self.models):
+            model.render(translations[i], rotations[i])
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
