@@ -35,23 +35,24 @@ class PartModel:
         self.triangles = np.asarray(model.meshes[0].mesh.triangles)
         self.part_index = part_index
         rr.log(
-            f"model/{self.part_index}",
+            f"model/parts/{self.part_index}",
             rr.Mesh3D(
                 vertex_positions=self.vertices.tolist(),
                 vertex_normals=self.normals.tolist(),
                 triangle_indices=self.triangles.tolist(),
             ),
             rr.InstancePoses3D(
-                translations=[],
+                scales=[0.0, 0.0, 0.0],  # Hide models by default
             ),
         )
 
     def render(self, translations: List[List[float]], rotations: List[List[float]]):
         rr.log(
-            f"model/{self.part_index}",
+            f"model/parts/{self.part_index}",
             rr.InstancePoses3D(
                 translations=translations,
                 quaternions=rotations,
+                scales=[1.0, 1.0, 1.0] if len(translations) > 0 else [0.0, 0.0, 0.0],
             ),
         )
 
@@ -83,6 +84,14 @@ class ConstructionEnv(gym.Env):
             for i, path in enumerate(BLOCK_PARTS):
                 model = PartModel(path.replace(".ron", ".glb"), i)
                 self.models.append(model)
+            rr.log(
+                "model",
+                rr.Transform3D(
+                    rotation_axis_angle=rr.RotationAxisAngle(
+                        [1.0, 0.0, 0.0], degrees=90.0
+                    )
+                ),
+            )
 
     def step(self, action: int) -> tuple[Data, float, bool, bool, dict[str, Any]]:
         config = self.place_configs[action - len(self.model)]
