@@ -93,9 +93,18 @@ class QNet(nn.Module):
         )
 
     def forward(self, data: Data):
-        x, edge_index, batch, part_ids = data.x, data.edge_index, data.batch, data.part_ids
-        part_embs = self.embeddings.gather(0, part_ids) # Shape: (num_nodes, part_emb_dim)
-        node_embs = torch.cat([part_embs, x], 1) # Shape: (num_nodes, node_dim + part_emb_dim)
+        x, edge_index, batch, part_ids = (
+            data.x,
+            data.edge_index,
+            data.batch,
+            data.part_ids,
+        )
+        part_embs = self.embeddings.index_select(
+            0, part_ids
+        )  # Shape: (num_nodes, part_emb_dim)
+        node_embs = torch.cat(
+            [part_embs, x], 1
+        )  # Shape: (num_nodes, node_dim + part_emb_dim)
         x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
         x = self.process(x, edge_index)  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
