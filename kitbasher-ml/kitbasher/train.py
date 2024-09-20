@@ -60,9 +60,21 @@ class Config:
 
 
 class QNet(nn.Module):
-    def __init__(self, num_steps: int, node_feature_dim: int, hidden_dim: int):
+    def __init__(
+        self,
+        num_parts: int,
+        part_emb_size: int,
+        num_steps: int,
+        node_feature_dim: int,
+        hidden_dim: int,
+    ):
         nn.Module.__init__(self)
-        self.encode = nn.Linear(node_feature_dim, hidden_dim)
+
+        # Part embeddings
+        self.embeddings = nn.Parameter(torch.rand([num_parts, part_emb_size]))
+
+        # Encode-process-encode architecture
+        self.encode = nn.Linear(part_emb_size + node_feature_dim, hidden_dim)
         process_layers: List[Union[Tuple[nn.Module, str], nn.Module]] = []
         for _ in range(num_steps):
             process_layers.append(
@@ -81,8 +93,10 @@ class QNet(nn.Module):
         )
 
     def forward(self, data: Data):
-        x, edge_index, batch = data.x, data.edge_index, data.batch
-        x = self.encode(x)  # Shape: (num_nodes, hidden_dim)
+        x, edge_index, batch, part_ids = data.x, data.edge_index, data.batch, data.part_ids
+        part_embs = self.embeddings.gather(0, part_ids) # Shape: (num_nodes, part_emb_dim)
+        node_embs = torch.cat([part_embs, x], 1) # Shape: (num_nodes, node_dim + part_emb_dim)
+        x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
         x = self.process(x, edge_index)  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
         advantage_mean = self.mean_aggr(advantage, batch)  # Shape: (num_batches, 1)
@@ -189,7 +203,7 @@ if __name__ == "__main__":
     assert isinstance(obs_space, gym.spaces.Graph)
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
-    q_net = QNet(3, obs_space.node_space.shape[0], 64)
+    q_net = QNet(env.num_parts, 32, 3, obs_space.node_space.shape[0], 64)
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
     q_opt = torch.optim.Adam(q_net.parameters(), lr=cfg.q_lr)

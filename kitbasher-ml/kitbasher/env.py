@@ -65,6 +65,7 @@ class ConstructionEnv(gym.Env):
         max_steps: Optional[int] = None,
         visualize: bool = False,
     ) -> None:
+        self.num_parts = len(BLOCK_PARTS)
         self.engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES)
         self.model: List[PyPlacedConfig] = []
         self.place_configs: List[PyPlacedConfig] = []
