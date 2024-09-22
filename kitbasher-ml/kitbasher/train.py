@@ -9,6 +9,7 @@ import gymnasium as gym
 from kitbasher_rust import PyPlacedConfig
 from torch_geometric.data import Data, Batch  # type: ignore
 from torch_geometric.nn.conv import GCNConv  # type: ignore
+from torch_geometric.nn import DeepSetsAggregation  # type: ignore
 from torch_geometric.nn import Sequential  # type: ignore
 from torch_geometric.nn import aggr
 from torch import Tensor
@@ -54,9 +55,25 @@ class Config:
     use_potential: bool = (
         False  # If true, the agent is rewarded by the change in scoring on each timestep. Otherwise, the reward is only given at the end.
     )
+    process_type: str = (
+        "gcn"  # Type of operation in the processing step. Choices: ["deep_set", "gcn", "self_attn", "independent"]
+    )
     eval_every: int = 100
     out_dir: str = "runs"
     device: str = "cuda"
+
+
+class Lambda(nn.Module):
+    """
+    A parameterless module that just wraps a function.
+    """
+
+    def __init__(self, fn: Callable):
+        nn.Module.__init__(self)
+        self.fn = fn
+
+    def forward(self, *args):
+        return self.fn(*args)
 
 
 class QNet(nn.Module):
@@ -67,8 +84,10 @@ class QNet(nn.Module):
         num_steps: int,
         node_feature_dim: int,
         hidden_dim: int,
+        process_type: str,
     ):
         nn.Module.__init__(self)
+        assert process_type in ["deep_set", "gcn", "self_attn", "independent"]
 
         # Part embeddings
         self.embeddings = nn.Parameter(torch.rand([num_parts, part_emb_size]))
@@ -77,11 +96,38 @@ class QNet(nn.Module):
         self.encode = nn.Linear(part_emb_size + node_feature_dim, hidden_dim)
         process_layers: List[Union[Tuple[nn.Module, str], nn.Module]] = []
         for _ in range(num_steps):
-            process_layers.append(
-                (GCNConv(hidden_dim, hidden_dim), "x, edge_index -> x")
-            )
+            if process_type == "deep_set":
+                process_layers.append(
+                    (
+                        DeepSetsAggregation(
+                            nn.Linear(hidden_dim, hidden_dim),
+                            nn.Linear(hidden_dim, hidden_dim),
+                        ),
+                        "x, batch -> x",
+                    )
+                )
+                process_layers.append(
+                    (
+                        Lambda(lambda x, batch: torch.index_select(x, 0, batch)),
+                        "x, batch -> x",
+                    )
+                )
+            if process_type == "gcn":
+                process_layers.append(
+                    (GCNConv(hidden_dim, hidden_dim), "x, edge_index -> x")
+                )
+            if process_type == "self_attn":
+                # NOTE: We need to separate graphs into their own batches before doing this
+                process_layers.append(
+                    (
+                        nn.MultiheadAttention(hidden_dim, 1, batch_first=True),
+                        "x, x, x -> x, _",
+                    )
+                )
+            if process_type == "independent":
+                process_layers.append((nn.Linear(hidden_dim, hidden_dim), "x -> x"))
             process_layers.append(nn.ReLU())
-        self.process = Sequential("x, edge_index", process_layers)
+        self.process = Sequential("x, edge_index, batch", process_layers)
         self.advantage = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -93,6 +139,7 @@ class QNet(nn.Module):
         )
 
     def forward(self, data: Data):
+        data = data.sort()
         x, edge_index, batch, part_ids = (
             data.x,
             data.edge_index,
@@ -106,7 +153,8 @@ class QNet(nn.Module):
             [part_embs, x], 1
         )  # Shape: (num_nodes, node_dim + part_emb_dim)
         x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
-        x = self.process(x, edge_index)  # Shape: (num_nodes, hidden_dim)
+        print(x.shape, batch.shape)
+        x = self.process(x, edge_index, batch)  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
         advantage_mean = self.mean_aggr(advantage, batch)  # Shape: (num_batches, 1)
         advantage_mean = torch.gather(
@@ -212,7 +260,9 @@ if __name__ == "__main__":
     assert isinstance(obs_space, gym.spaces.Graph)
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
-    q_net = QNet(env.num_parts, 32, 3, obs_space.node_space.shape[0], 64)
+    q_net = QNet(
+        env.num_parts, 32, 3, obs_space.node_space.shape[0], 64, cfg.process_type
+    )
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
     q_opt = torch.optim.Adam(q_net.parameters(), lr=cfg.q_lr)
