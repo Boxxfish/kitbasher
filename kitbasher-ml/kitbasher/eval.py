@@ -57,7 +57,7 @@ if __name__ == "__main__":
     assert isinstance(obs_space, gym.spaces.Graph)
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
-    q_net = QNet(1, obs_space.node_space.shape[0], 4)
+    # q_net = QNet(1, obs_space.node_space.shape[0], 4)
     with torch.no_grad():
         obs_, info = env.reset()
         env.render()
