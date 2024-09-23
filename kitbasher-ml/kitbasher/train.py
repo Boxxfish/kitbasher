@@ -7,6 +7,7 @@ import random
 from typing import *
 import gymnasium as gym
 from kitbasher_rust import PyPlacedConfig
+import torch_geometric
 from torch_geometric.data import Data, Batch  # type: ignore
 from torch_geometric.nn.conv import GCNConv  # type: ignore
 from torch_geometric.nn import DeepSetsAggregation  # type: ignore
@@ -16,6 +17,7 @@ from torch import Tensor
 
 import torch
 import torch.nn as nn
+import torch_geometric.utils
 import wandb
 from tqdm import tqdm
 from safetensors.torch import save_model
@@ -116,14 +118,6 @@ class QNet(nn.Module):
                 process_layers.append(
                     (GCNConv(hidden_dim, hidden_dim), "x, edge_index -> x")
                 )
-            if process_type == "self_attn":
-                # NOTE: We need to separate graphs into their own batches before doing this
-                process_layers.append(
-                    (
-                        nn.MultiheadAttention(hidden_dim, 1, batch_first=True),
-                        "x, x, x -> x, _",
-                    )
-                )
             if process_type == "independent":
                 process_layers.append((nn.Linear(hidden_dim, hidden_dim), "x -> x"))
             process_layers.append(nn.ReLU())
@@ -146,6 +140,7 @@ class QNet(nn.Module):
             data.batch,
             data.part_ids,
         )
+        edge_index = torch_geometric.utils.add_self_loops(edge_index)
         part_embs = self.embeddings.index_select(
             0, part_ids
         )  # Shape: (num_nodes, part_emb_dim)
