@@ -60,7 +60,7 @@ class PartModel:
 class ConstructionEnv(gym.Env):
     def __init__(
         self,
-        score_fn: Callable[[List[PyPlacedConfig]], float],
+        score_fn: Callable[[List[PyPlacedConfig], Data], tuple[float, bool]],
         use_potential: bool,
         max_steps: Optional[int] = None,
         visualize: bool = False,
@@ -101,14 +101,17 @@ class ConstructionEnv(gym.Env):
         done = self.timer == self.max_steps
         obs = self.gen_obs()
         if self.use_potential:
-            new_score = self.score_fn(self.model)
+            new_score, d = self.score_fn(self.model, obs)
+            done = done or d
             reward = new_score - self.last_score
             self.last_score = new_score
         else:
             # Reward at end
             reward = 0.0
+            new_score, d = self.score_fn(self.model, obs)
+            done = done or d
             if done:
-                reward = self.score_fn(self.model)
+                reward = new_score
         return obs, reward, done, False, {}
 
     def render(self):
@@ -131,7 +134,7 @@ class ConstructionEnv(gym.Env):
         self.timer = 0
         obs = self.gen_obs()
         if self.use_potential:
-            self.last_score = self.score_fn(self.model)
+            self.last_score, _ = self.score_fn(self.model, obs)
         return obs, {}
 
     def gen_obs(self) -> Data:
