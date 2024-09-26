@@ -7,9 +7,12 @@ import gymnasium as gym
 import torch
 from kitbasher.train import (
     QNet,
+    connect_scorer,
+    connect_start,
     get_action,
     process_act_masks,
     process_obs,
+    single_start,
     volume_fill_scorer,
 )
 from kitbasher.env import ConstructionEnv
@@ -42,10 +45,15 @@ if __name__ == "__main__":
 
     if cfg.score_fn == "volume":
         score_fn = volume_fill_scorer
+        start_fn = single_start
+    elif cfg.score_fn == "connect":
+        score_fn = connect_scorer
+        start_fn = connect_start
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     env = ConstructionEnv(
         score_fn=score_fn,
+        start_fn=start_fn,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
         visualize=True,
