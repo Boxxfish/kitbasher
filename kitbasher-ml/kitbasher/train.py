@@ -7,7 +7,7 @@ import random
 from typing import *
 import gymnasium as gym
 from kitbasher_rust import PyPlacedConfig
-import torch_geometric
+import torch_geometric  # type: ignore
 from torch_geometric.data import Data, Batch  # type: ignore
 from torch_geometric.nn.conv import GCNConv  # type: ignore
 from torch_geometric.nn import DeepSetsAggregation  # type: ignore
@@ -17,7 +17,7 @@ from torch import Tensor
 
 import torch
 import torch.nn as nn
-import torch_geometric.utils
+import torch_geometric.utils  # type: ignore
 import wandb
 from tqdm import tqdm
 from safetensors.torch import save_model
@@ -53,7 +53,9 @@ class Config:
     max_steps: int = (
         64  # Maximum number of steps that can be performed in the environment.
     )
-    score_fn: str = "volume"  # Score function to use. Choices: "volume", "clip".
+    score_fn: str = (
+        "volume"  # Score function to use. Choices: "volume", "connect", "clip".
+    )
     use_potential: bool = (
         False  # If true, the agent is rewarded by the change in scoring on each timestep. Otherwise, the reward is only given at the end.
     )
@@ -140,7 +142,7 @@ class QNet(nn.Module):
             data.batch,
             data.part_ids,
         )
-        edge_index = torch_geometric.utils.add_self_loops(edge_index)
+        edge_index = torch_geometric.utils.add_self_loops(edge_index)[0]
         part_embs = self.embeddings.index_select(
             0, part_ids
         )  # Shape: (num_nodes, part_emb_dim)
@@ -148,7 +150,6 @@ class QNet(nn.Module):
             [part_embs, x], 1
         )  # Shape: (num_nodes, node_dim + part_emb_dim)
         x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
-        print(x.shape, batch.shape)
         x = self.process(x, edge_index, batch)  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
         advantage_mean = self.mean_aggr(advantage, batch)  # Shape: (num_batches, 1)
@@ -177,7 +178,7 @@ def process_act_masks(obs: Data) -> Tensor:
     return obs.action_mask
 
 
-def volume_fill_scorer(model: List[PyPlacedConfig]) -> float:
+def volume_fill_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool]:
     """
     Grants a reward of 1 for every part that touches the volume.
     """
@@ -195,7 +196,36 @@ def volume_fill_scorer(model: List[PyPlacedConfig]) -> float:
                 part_score = 0
                 break
         score += part_score
-    return score
+    return score, False
+
+
+def connect_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool]:
+    """
+    Returns 1 and ends the episode if the model is connected.
+    """
+    # Set up adjacency list
+    edges: Dict[int, List[int]] = {}
+    for e1, e2 in data.edge_index.T.tolist():
+        if e1 not in edges:
+            edges[e1] = []
+        if e2 not in edges:
+            edges[e2] = []
+        edges[e1].append(e2)
+        edges[e2].append(e1)
+
+    # Perform DFS to check number of nodes reachable from node 0
+    seen = set()
+    stack = [0]
+    while len(stack) > 0:
+        node_idx = stack.pop()
+        for neighbor in edges[node_idx]:
+            if neighbor not in seen:
+                stack.append(neighbor)
+        seen.add(node_idx)
+
+    connected = len(seen) < data.num_nodes
+
+    return 1.0 if connected else 0.0, connected
 
 
 if __name__ == "__main__":
@@ -240,6 +270,8 @@ if __name__ == "__main__":
 
     if cfg.score_fn == "volume":
         score_fn = volume_fill_scorer
+    elif cfg.score_fn == "connect":
+        score_fn = connect_scorer
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     env = ConstructionEnv(
