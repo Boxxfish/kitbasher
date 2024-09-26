@@ -142,7 +142,7 @@ class QNet(nn.Module):
             data.batch,
             data.part_ids,
         )
-        edge_index = torch_geometric.utils.add_self_loops(edge_index)
+        edge_index = torch_geometric.utils.add_self_loops(edge_index)[0]
         part_embs = self.embeddings.index_select(
             0, part_ids
         )  # Shape: (num_nodes, part_emb_dim)
@@ -150,7 +150,6 @@ class QNet(nn.Module):
             [part_embs, x], 1
         )  # Shape: (num_nodes, node_dim + part_emb_dim)
         x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
-        print(x.shape, batch.shape)
         x = self.process(x, edge_index, batch)  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
         advantage_mean = self.mean_aggr(advantage, batch)  # Shape: (num_batches, 1)
