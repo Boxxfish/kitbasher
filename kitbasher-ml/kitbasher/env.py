@@ -1,3 +1,4 @@
+import random
 from typing import *
 import gymnasium as gym
 import gymnasium as gym
@@ -63,6 +64,7 @@ class ConstructionEnv(gym.Env):
         score_fn: Callable[[List[PyPlacedConfig], Data], tuple[float, bool]],
         start_fn: Callable[[EngineWrapper], None],
         use_potential: bool,
+        max_actions_per_step: int,
         max_steps: Optional[int] = None,
         visualize: bool = False,
     ) -> None:
@@ -71,6 +73,7 @@ class ConstructionEnv(gym.Env):
         self.model: List[PyPlacedConfig] = []
         self.place_configs: List[PyPlacedConfig] = []
         self.timer = 0
+        self.max_actions_per_step = max_actions_per_step
         self.max_steps = max_steps
         self.observation_space = gym.spaces.Graph(
             node_space=gym.spaces.Box(-1, 1, [NODE_DIM]), edge_space=None
@@ -140,7 +143,9 @@ class ConstructionEnv(gym.Env):
 
     def gen_obs(self) -> Data:
         self.model = self.engine.get_model()
-        self.place_configs = self.engine.gen_candidates()
+        place_configs = self.engine.gen_candidates()
+        random.shuffle(place_configs)
+        self.place_configs = place_configs[:self.max_actions_per_step]
         part_ids = []
         nodes = []
         edges = set()
