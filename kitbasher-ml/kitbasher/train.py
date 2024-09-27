@@ -217,6 +217,7 @@ def connect_start(engine: EngineWrapper):
         candidates = engine.gen_candidates()
         config = random.choice(candidates)
         parts.append(config)
+        engine.place_part(config)
 
     engine.clear_model()
 
