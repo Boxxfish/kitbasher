@@ -26,6 +26,7 @@ class Config:
         False  # If true, the agent is rewarded by the change in scoring on each timestep. Otherwise, the reward is only given at the end.
     )
     max_eval_steps: int = 8
+    max_actions_per_step: int = 100
     device: str = "cuda"
 
 
@@ -54,6 +55,7 @@ if __name__ == "__main__":
     env = ConstructionEnv(
         score_fn=score_fn,
         start_fn=start_fn,
+        max_actions_per_step=cfg.max_actions_per_step,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
         visualize=True,

@@ -62,6 +62,9 @@ class Config:
     process_type: str = (
         "gcn"  # Type of operation in the processing step. Choices: ["deep_set", "gcn", "self_attn", "independent"]
     )
+    max_actions_per_step: int = (
+        100  # The maximum number of placements the environment provides at each step.
+    )
     eval_every: int = 100
     out_dir: str = "runs"
     device: str = "cuda"
@@ -177,9 +180,11 @@ def process_obs(obs: Data) -> Batch:
 def process_act_masks(obs: Data) -> Tensor:
     return obs.action_mask
 
+
 def single_start(engine: EngineWrapper):
     config = engine.create_config(5, 0, 0, 0)
     engine.place_part(config)
+
 
 def volume_fill_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool]:
     """
@@ -201,6 +206,7 @@ def volume_fill_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, 
         score += part_score
     return score, False
 
+
 def connect_start(engine: EngineWrapper):
     # Generate a model with 20 pieces
     parts: List[PyPlacedConfig] = []
@@ -211,9 +217,10 @@ def connect_start(engine: EngineWrapper):
         candidates = engine.gen_candidates()
         config = random.choice(candidates)
         parts.append(config)
+        engine.place_part(config)
 
     engine.clear_model()
-    
+
     # Place two random parts of the model
     indices = list(range(0, len(parts)))
     random.shuffle(indices)
@@ -221,6 +228,7 @@ def connect_start(engine: EngineWrapper):
         part = parts[indices[i]]
         part.connections = [None for _ in part.connections]
         engine.place_part(part)
+
 
 def connect_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool]:
     """
@@ -300,10 +308,18 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     env = ConstructionEnv(
-        score_fn=score_fn, start_fn=start_fn, use_potential=cfg.use_potential, max_steps=cfg.max_steps
+        score_fn=score_fn,
+        start_fn=start_fn,
+        max_actions_per_step=cfg.max_actions_per_step,
+        use_potential=cfg.use_potential,
+        max_steps=cfg.max_steps,
     )
     test_env = ConstructionEnv(
-        score_fn=score_fn, start_fn=start_fn, use_potential=cfg.use_potential, max_steps=cfg.max_steps
+        score_fn=score_fn,
+        start_fn=start_fn,
+        max_actions_per_step=cfg.max_actions_per_step,
+        use_potential=cfg.use_potential,
+        max_steps=cfg.max_steps,
     )
 
     # Initialize Q network
