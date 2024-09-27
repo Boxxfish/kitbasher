@@ -61,6 +61,7 @@ class ConstructionEnv(gym.Env):
     def __init__(
         self,
         score_fn: Callable[[List[PyPlacedConfig], Data], tuple[float, bool]],
+        start_fn: Callable[[EngineWrapper], None],
         use_potential: bool,
         max_steps: Optional[int] = None,
         visualize: bool = False,
@@ -76,6 +77,7 @@ class ConstructionEnv(gym.Env):
         )
         self.action_space = gym.spaces.Discrete(MAX_NODES)
         self.score_fn = score_fn
+        self.start_fn = start_fn
         self.use_potential = use_potential
         self.last_score = 0.0
         if visualize:
@@ -129,8 +131,7 @@ class ConstructionEnv(gym.Env):
         self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
     ) -> tuple[Data, dict[str, Any]]:
         self.engine.clear_model()
-        config = self.engine.create_config(5, 0, 0, 0)
-        self.engine.place_part(config)
+        self.start_fn(self.engine)
         self.timer = 0
         obs = self.gen_obs()
         if self.use_potential:

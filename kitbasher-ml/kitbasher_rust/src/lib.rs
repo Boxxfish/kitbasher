@@ -189,7 +189,7 @@ pub struct PyPlacedConfig {
     pub connectors: Vec<PyConnector>,
     #[pyo3(get)]
     pub bboxes: Vec<PyAABB>,
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub connections: Vec<Option<PyConnection>>,
 }
 
