@@ -21,6 +21,7 @@ rerun-sdk = "^0.18.2"
 open3d = "^0.18.0"
 addict = "^2.4.0"
 pandas = "^2.2.2"
+matplotlib = "^3.9.2"
 
 
 [tool.poetry.group.dev.dependencies]

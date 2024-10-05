@@ -1,4 +1,12 @@
+use std::{cell::RefCell, rc::Rc};
+
 use bevy::math::{Quat, Vec3};
+use kiss3d::{
+    camera::FirstPerson,
+    nalgebra::{self, Quaternion, UnitQuaternion, Vector3},
+    resource::Mesh,
+    window::Window,
+};
 use kitbasher_game::engine::{Axis, Connection, Connector, KBEngine, PlacedConfig, AABB};
 use pyo3::prelude::*;
 
@@ -292,15 +300,125 @@ impl EngineWrapper {
     }
 }
 
+#[pyclass]
+struct Renderer {
+    part_models: Vec<kiss3d::resource::Mesh>,
+}
+
+#[pymethods]
+impl Renderer {
+    #[new]
+    pub fn new(part_paths: Vec<String>) -> Self {
+        let mut part_models = Vec::new();
+        for path in &part_paths {
+            let (document, buffers, _) = gltf::import(path).unwrap();
+            for scene in document.scenes() {
+                for node in scene.nodes() {
+                    if node.name().is_some() && node.name().unwrap().contains("bbox") {
+                        continue;
+                    }
+                    if let Some(mesh) = node.mesh() {
+                        let xform = nalgebra::Matrix4::from_column_slice(
+                            node.transform().matrix().as_slice().as_flattened(),
+                        );
+                        let norm_xform = xform.try_inverse().unwrap().transpose();
+                        for prim in mesh.primitives() {
+                            let reader = prim.reader(|buffer| {
+                                buffers.get(buffer.index()).map(|data| &data.0[..])
+                            });
+                            let positions = reader
+                                .read_positions()
+                                .unwrap()
+                                .map(|x| xform.transform_point(&nalgebra::Point3::from(x)))
+                                .collect();
+                            // let normals = reader
+                            //     .read_normals()
+                            //     .unwrap()
+                            //     .map(|x| norm_xform.transform_vector(&nalgebra::Point3::from(x)))
+                            //     .collect();
+                            let indices: Vec<_> = reader
+                                .read_indices()
+                                .unwrap()
+                                .into_u32()
+                                .map(|x| x as u16)
+                                .collect();
+                            let part_mesh = kiss3d::resource::Mesh::new(
+                                positions,
+                                indices
+                                    .chunks_exact(3)
+                                    .map(|x| kiss3d::nalgebra::Point3::new(x[0], x[1], x[2]))
+                                    .collect(),
+                                None,
+                                None,
+                                false,
+                            );
+                            part_models.push(part_mesh);
+                        }
+                    }
+                }
+            }
+        }
+        Self { part_models }
+    }
+
+    /// Renders the model to an image and returns a byte array.
+    pub fn render_model(&self, model: Vec<PyPlacedConfig>) -> Vec<u8> {
+        let mut window = Window::new_with_size("Model Renderer", 256, 256);
+        let part_models: Vec<_> = self
+            .part_models
+            .iter()
+            .map(|m| {
+                Rc::new(RefCell::new(Mesh::new(
+                    m.coords().read().unwrap().data().as_ref().unwrap().clone(),
+                    m.faces().read().unwrap().data().as_ref().unwrap().clone(),
+                    m.normals().read().unwrap().data().clone(),
+                    m.uvs().read().unwrap().data().clone(),
+                    false,
+                )))
+            })
+            .collect();
+        for placed in &model {
+            let part_model = part_models[placed.part_id].clone();
+            let mut c = window.add_mesh(part_model, Vector3::new(1., 1., 1.));
+            c.set_color(1., 1., 1.);
+            c.prepend_to_local_transformation(&kiss3d::nalgebra::Isometry3::from_parts(
+                kiss3d::nalgebra::Translation3::new(
+                    placed.position.x,
+                    placed.position.y,
+                    placed.position.z,
+                ),
+                UnitQuaternion::from_quaternion(Quaternion::new(
+                    placed.rotation.w,
+                    placed.rotation.x,
+                    placed.rotation.y,
+                    placed.rotation.z,
+                )),
+            ));
+        }
+        let eye = kiss3d::nalgebra::Point3::new(40., 20., 40.);
+        let at = kiss3d::nalgebra::Point3::origin();
+        let mut fp = FirstPerson::new(eye, at);
+        fp.set_up_axis(-nalgebra::Vector3::y());
+        window.set_light(kiss3d::light::Light::StickToCamera);
+        window.set_background_color(0.1, 0.1, 0.1);
+        window.render_with_camera(&mut fp);
+
+        let mut buffer = Vec::new();
+        window.snap(&mut buffer);
+        buffer
+    }
+}
+
 #[pymodule]
 fn kitbasher_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<EngineWrapper>()?;
     m.add_class::<PyPlacedConfig>()?;
-    m.add_class::<PyQuat>()?;
     m.add_class::<PyVec3>()?;
+    m.add_class::<PyQuat>()?;
     m.add_class::<PyAABB>()?;
     m.add_class::<PyAxis>()?;
     m.add_class::<PyConnection>()?;
     m.add_class::<PyConnector>()?;
+    m.add_class::<Renderer>()?;
     Ok(())
 }
