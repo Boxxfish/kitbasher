@@ -1,12 +1,10 @@
 from argparse import ArgumentParser
 from dataclasses import dataclass
-import math
 import random
 from typing import *
 import gymnasium as gym
 from matplotlib import pyplot as plt
 
-from kitbasher_rust import Renderer
 import numpy as np
 import torch
 from kitbasher.train import (
@@ -19,7 +17,7 @@ from kitbasher.train import (
     single_start,
     volume_fill_scorer,
 )
-from kitbasher.env import BLOCK_PARTS, ConstructionEnv
+from kitbasher.env import ConstructionEnv
 
 
 @dataclass
@@ -65,9 +63,6 @@ if __name__ == "__main__":
         visualize=True,
     )
 
-    # Initialize renderer
-    renderer = Renderer([part[:part.rindex(".")] + ".glb" for part in BLOCK_PARTS])
-
     # Initialize Q network
     obs_space = env.observation_space
     act_space = env.action_space
@@ -89,8 +84,7 @@ if __name__ == "__main__":
             env.render()
 
             # Show model scoring screenshot
-            buffer = renderer.render_model(env.model)
-            plt.imshow(np.array(buffer).reshape([256, 256, 3])[:, ::-1, :] / 255)
+            plt.imshow(env.screenshot())
             plt.show()
 
             eval_obs = eval_obs = process_obs(obs_)
