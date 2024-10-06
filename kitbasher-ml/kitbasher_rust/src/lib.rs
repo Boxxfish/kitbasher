@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use bevy::math::{Quat, Vec3};
 use kiss3d::{
-    camera::FirstPerson,
+    camera::{Camera, FirstPerson},
     nalgebra::{self, Quaternion, UnitQuaternion, Vector3},
     resource::Mesh,
     window::Window,
@@ -303,6 +303,7 @@ impl EngineWrapper {
 #[pyclass]
 struct Renderer {
     part_models: Vec<kiss3d::resource::Mesh>,
+    part_model_outlines: Vec<kiss3d::resource::Mesh>,
 }
 
 #[pymethods]
@@ -310,6 +311,7 @@ impl Renderer {
     #[new]
     pub fn new(part_paths: Vec<String>) -> Self {
         let mut part_models = Vec::new();
+        let mut part_model_outlines = Vec::new();
         for path in &part_paths {
             let (document, buffers, _) = gltf::import(path).unwrap();
             for scene in document.scenes() {
@@ -326,7 +328,7 @@ impl Renderer {
                             let reader = prim.reader(|buffer| {
                                 buffers.get(buffer.index()).map(|data| &data.0[..])
                             });
-                            let positions = reader
+                            let positions: Vec<_> = reader
                                 .read_positions()
                                 .unwrap()
                                 .map(|x| xform.transform_point(&nalgebra::Point3::from(x)))
@@ -341,24 +343,35 @@ impl Renderer {
                                 .unwrap()
                                 .into_u32()
                                 .map(|x| x as u16)
+                                .collect::<Vec<_>>()
+                                .chunks_exact(3)
+                                .map(|x| kiss3d::nalgebra::Point3::new(x[0], x[1], x[2]))
                                 .collect();
                             let part_mesh = kiss3d::resource::Mesh::new(
+                                positions.clone(),
+                                indices.clone(),
+                                None,
+                                None,
+                                false,
+                            );
+                            let part_mesh_outline = kiss3d::resource::Mesh::new(
                                 positions,
-                                indices
-                                    .chunks_exact(3)
-                                    .map(|x| kiss3d::nalgebra::Point3::new(x[0], x[1], x[2]))
-                                    .collect(),
+                                indices.iter().map(|x| x.yxz()).collect(),
                                 None,
                                 None,
                                 false,
                             );
                             part_models.push(part_mesh);
+                            part_model_outlines.push(part_mesh_outline);
                         }
                     }
                 }
             }
         }
-        Self { part_models }
+        Self {
+            part_models,
+            part_model_outlines,
+        }
     }
 
     /// Renders the model to an image and returns a byte array.
@@ -377,11 +390,24 @@ impl Renderer {
                 )))
             })
             .collect();
+        let part_model_outlines: Vec<_> = self
+            .part_model_outlines
+            .iter()
+            .map(|m| {
+                Rc::new(RefCell::new(Mesh::new(
+                    m.coords().read().unwrap().data().as_ref().unwrap().clone(),
+                    m.faces().read().unwrap().data().as_ref().unwrap().clone(),
+                    m.normals().read().unwrap().data().clone(),
+                    m.uvs().read().unwrap().data().clone(),
+                    false,
+                )))
+            })
+            .collect();
         for placed in &model {
             let part_model = part_models[placed.part_id].clone();
-            let mut c = window.add_mesh(part_model, Vector3::new(1., 1., 1.));
-            c.set_color(1., 1., 1.);
-            c.prepend_to_local_transformation(&kiss3d::nalgebra::Isometry3::from_parts(
+            let part_model_outline = part_model_outlines[placed.part_id].clone();
+            // Render both original part and outline
+            let part_xform = kiss3d::nalgebra::Isometry3::from_parts(
                 kiss3d::nalgebra::Translation3::new(
                     placed.position.x,
                     placed.position.y,
@@ -393,14 +419,22 @@ impl Renderer {
                     placed.rotation.y,
                     placed.rotation.z,
                 )),
-            ));
+            );
+            let mut c1 = window.add_mesh(part_model, Vector3::new(1., 1., 1.));
+            c1.set_color(0., 0., 0.);
+            c1.prepend_to_local_transformation(&part_xform);
+
+            let mut c2 = window.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
+            c2.set_color(0., 0., 0.);
+            c2.enable_backface_culling(true);
+            c2.prepend_to_local_transformation(&part_xform);
         }
-        let eye = kiss3d::nalgebra::Point3::new(40., 20., 40.);
+        let eye = kiss3d::nalgebra::Point3::new(100., 50., 100.);
         let at = kiss3d::nalgebra::Point3::origin();
         let mut fp = FirstPerson::new(eye, at);
         fp.set_up_axis(-nalgebra::Vector3::y());
         window.set_light(kiss3d::light::Light::StickToCamera);
-        window.set_background_color(0.1, 0.1, 0.1);
+        window.set_background_color(1., 1., 1.);
         window.render_with_camera(&mut fp);
 
         let mut buffer = Vec::new();
