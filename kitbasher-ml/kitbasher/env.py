@@ -8,7 +8,9 @@ from torch import Tensor
 from kitbasher_rust import EngineWrapper, PyAABB, PyPlacedConfig
 from torch_geometric.data import Data  # type: ignore
 import rerun as rr  # type: ignore
-import open3d as o3d  # type: ignore
+import open3d as o3d
+
+from kitbasher_rust.kitbasher_rust import Renderer  # type: ignore
 
 BLOCK_PARTS = [
     "../kitbasher-game/assets/models/1x1.ron",
@@ -83,6 +85,7 @@ class ConstructionEnv(gym.Env):
         self.start_fn = start_fn
         self.use_potential = use_potential
         self.last_score = 0.0
+        self.renderer = Renderer([part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS])
         if visualize:
             rr.init("Construction")
             rr.spawn()
@@ -141,11 +144,18 @@ class ConstructionEnv(gym.Env):
             self.last_score, _ = self.score_fn(self.model, obs)
         return obs, {}
 
+    def screenshot(self) -> np.ndarray:
+        """
+        Returns a render of the model.
+        """
+        buffer = self.renderer.render_model(self.model)
+        return np.array(buffer).reshape([256, 256, 3])[:, ::-1, :] / 255
+
     def gen_obs(self) -> Data:
         self.model = self.engine.get_model()
         place_configs = self.engine.gen_candidates()
         random.shuffle(place_configs)
-        self.place_configs = place_configs[:self.max_actions_per_step]
+        self.place_configs = place_configs[: self.max_actions_per_step]
         part_ids = []
         nodes = []
         edges = set()

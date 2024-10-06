@@ -3,7 +3,9 @@ from dataclasses import dataclass
 import random
 from typing import *
 import gymnasium as gym
+from matplotlib import pyplot as plt
 
+import numpy as np
 import torch
 from kitbasher.train import (
     QNet,
@@ -80,6 +82,11 @@ if __name__ == "__main__":
             # action, q_val = get_action(q_net, eval_obs, eval_mask)
             obs_, reward, done, trunc, info = env.step(action)
             env.render()
+
+            # Show model scoring screenshot
+            plt.imshow(env.screenshot())
+            plt.show()
+
             eval_obs = eval_obs = process_obs(obs_)
             eval_mask = process_act_masks(obs_)
             if done or trunc:
