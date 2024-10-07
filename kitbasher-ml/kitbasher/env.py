@@ -63,12 +63,13 @@ class PartModel:
 class ConstructionEnv(gym.Env):
     def __init__(
         self,
-        score_fn: Callable[[List[PyPlacedConfig], Data], tuple[float, bool]],
+        score_fn: Callable[[List[PyPlacedConfig], Data, "ConstructionEnv"], tuple[float, bool]],
         start_fn: Callable[[EngineWrapper], None],
         use_potential: bool,
         max_actions_per_step: int,
         max_steps: Optional[int] = None,
         visualize: bool = False,
+        prompts: List[str] = ["test"],
     ) -> None:
         self.num_parts = len(BLOCK_PARTS)
         self.engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES)
@@ -78,14 +79,17 @@ class ConstructionEnv(gym.Env):
         self.max_actions_per_step = max_actions_per_step
         self.max_steps = max_steps
         self.observation_space = gym.spaces.Graph(
-            node_space=gym.spaces.Box(-1, 1, [NODE_DIM]), edge_space=None
+            node_space=gym.spaces.Box(-1, 1, [len(prompts) + NODE_DIM]), edge_space=None
         )
         self.action_space = gym.spaces.Discrete(MAX_NODES)
         self.score_fn = score_fn
         self.start_fn = start_fn
         self.use_potential = use_potential
         self.last_score = 0.0
+        self.prompt = ""
+        self.prompts = prompts
         self.renderer = Renderer([part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS])
+        self.label_idx = 0
         if visualize:
             rr.init("Construction")
             rr.spawn()
@@ -109,14 +113,14 @@ class ConstructionEnv(gym.Env):
         done = self.timer == self.max_steps
         obs = self.gen_obs()
         if self.use_potential:
-            new_score, d = self.score_fn(self.model, obs)
+            new_score, d = self.score_fn(self.model, obs, self)
             done = done or d
             reward = new_score - self.last_score
             self.last_score = new_score
         else:
             # Reward at end
             reward = 0.0
-            new_score, d = self.score_fn(self.model, obs)
+            new_score, d = self.score_fn(self.model, obs, self)
             done = done or d
             if done:
                 reward = new_score
@@ -142,6 +146,8 @@ class ConstructionEnv(gym.Env):
         obs = self.gen_obs()
         if self.use_potential:
             self.last_score, _ = self.score_fn(self.model, obs)
+        self.label_idx = random.randrange(0, len(self.prompts))
+        self.prompt = self.prompts[self.label_idx]
         return obs, {}
 
     def screenshot(self) -> np.ndarray:
@@ -153,9 +159,17 @@ class ConstructionEnv(gym.Env):
 
     def gen_obs(self) -> Data:
         self.model = self.engine.get_model()
+
+        # Create label features
+        label_one_hot = torch.zeros([len(self.prompts)])
+        label_one_hot[self.label_idx] = 1
+
+        # Take a random subset of the next candidates
         place_configs = self.engine.gen_candidates()
         random.shuffle(place_configs)
         self.place_configs = place_configs[: self.max_actions_per_step]
+        
+        # Create graph features
         part_ids = []
         nodes = []
         edges = set()
@@ -191,7 +205,7 @@ class ConstructionEnv(gym.Env):
                     if connection is not None:
                         edges.add((j, connection.placed_id))
                         edges.add((connection.placed_id, j))
-            nodes.append(node_vec)
+            nodes.append(torch.cat([label_one_hot, node_vec], 0))
         x = torch.stack(nodes)
         edge_index = torch.tensor([list(e) for e in edges]).T.contiguous()
         mask_arr = [1] * len(self.model) + [0] * len(self.place_configs)

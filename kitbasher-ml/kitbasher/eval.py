@@ -11,6 +11,7 @@ from kitbasher.train import (
     QNet,
     connect_scorer,
     connect_start,
+    create_clip_scorer,
     get_action,
     process_act_masks,
     process_obs,
@@ -52,6 +53,9 @@ if __name__ == "__main__":
     elif cfg.score_fn == "connect":
         score_fn = connect_scorer
         start_fn = connect_start
+    elif cfg.score_fn == "clip":
+        score_fn = create_clip_scorer()
+        starT_fn = single_start
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     env = ConstructionEnv(

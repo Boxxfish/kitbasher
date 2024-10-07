@@ -25,10 +25,23 @@ from safetensors.torch import save_model
 from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
 from kitbasher.env import ConstructionEnv
+from kitbasher_rust.kitbasher_rust import Renderer
 
 _: Any
 INF = 10**8
 
+LABELS = [
+    "sports car",
+    "rowboat",
+    "motorcycle",
+    "tractor",
+    "train",
+    "helicopter",
+    "plane",
+    "spaceship",
+    "skateboard",
+    "hot air balloon",
+]
 
 # Hyperparameters
 @dataclass
@@ -65,6 +78,7 @@ class Config:
     max_actions_per_step: int = (
         100  # The maximum number of placements the environment provides at each step.
     )
+    prompt: str = "a lego "
     eval_every: int = 100
     out_dir: str = "runs"
     device: str = "cuda"
@@ -186,7 +200,9 @@ def single_start(engine: EngineWrapper):
     engine.place_part(config)
 
 
-def volume_fill_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool]:
+def volume_fill_scorer(
+    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv"
+) -> tuple[float, bool]:
     """
     Grants a reward of 1 for every part that touches the volume.
     """
@@ -230,7 +246,9 @@ def connect_start(engine: EngineWrapper):
         engine.place_part(part)
 
 
-def connect_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool]:
+def connect_scorer(
+    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv"
+) -> tuple[float, bool]:
     """
     Returns 1 and ends the episode if the model is connected.
     """
@@ -257,6 +275,36 @@ def connect_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool
     connected = len(seen) < data.num_nodes
 
     return 1.0 if connected else 0.0, connected
+
+
+def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
+    from transformers import CLIPProcessor, CLIPModel
+
+    clip = CLIPModel.from_pretrained(model_url)
+    processor = CLIPProcessor.from_pretrained(model_url)
+
+    def clip_scorer(
+        model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv"
+    ) -> tuple[float, bool]:
+        """
+        Returns the score returned by CLIP.
+        """
+        prompt = env.prompt
+        img = env.screenshot()
+        inputs = processor(
+            text=[prompt],
+            images=img,
+            return_tensors="pt",
+            padding=True,
+            do_rescale=False,
+        )
+
+        outputs = clip(**inputs)
+        logits_per_image = outputs.logits_per_image
+        score = logits_per_image[0].item()
+        return score, False
+
+    return clip_scorer
 
 
 if __name__ == "__main__":
@@ -305,6 +353,9 @@ if __name__ == "__main__":
     elif cfg.score_fn == "connect":
         score_fn = connect_scorer
         start_fn = connect_start
+    elif cfg.score_fn == "clip":
+        score_fn = create_clip_scorer()
+        starT_fn = single_start
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     env = ConstructionEnv(
