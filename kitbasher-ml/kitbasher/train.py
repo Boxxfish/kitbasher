@@ -29,6 +29,18 @@ from kitbasher.env import ConstructionEnv
 _: Any
 INF = 10**8
 
+LABELS = [
+    "sports car",
+    "rowboat",
+    "motorcycle",
+    "tractor",
+    "train",
+    "helicopter",
+    "plane",
+    "spaceship",
+    "skateboard",
+    "hot air balloon",
+]
 
 # Hyperparameters
 @dataclass
@@ -65,6 +77,7 @@ class Config:
     max_actions_per_step: int = (
         100  # The maximum number of placements the environment provides at each step.
     )
+    prompt: str = "a lego "
     eval_every: int = 100
     out_dir: str = "runs"
     device: str = "cuda"
@@ -186,7 +199,9 @@ def single_start(engine: EngineWrapper):
     engine.place_part(config)
 
 
-def volume_fill_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool]:
+def volume_fill_scorer(
+    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv"
+) -> tuple[float, bool]:
     """
     Grants a reward of 1 for every part that touches the volume.
     """
@@ -230,13 +245,17 @@ def connect_start(engine: EngineWrapper):
         engine.place_part(part)
 
 
-def connect_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool]:
+def connect_scorer(
+    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv"
+) -> tuple[float, bool]:
     """
     Returns 1 and ends the episode if the model is connected.
     """
     # Set up adjacency list
     edges: Dict[int, List[int]] = {}
     for e1, e2 in data.edge_index.T.tolist():
+        if e1 >= len(model) or e2 >= len(model):
+            continue
         if e1 not in edges:
             edges[e1] = []
         if e2 not in edges:
@@ -249,14 +268,45 @@ def connect_scorer(model: List[PyPlacedConfig], data: Data) -> tuple[float, bool
     stack = [0]
     while len(stack) > 0:
         node_idx = stack.pop()
-        for neighbor in edges[node_idx]:
-            if neighbor not in seen:
-                stack.append(neighbor)
-        seen.add(node_idx)
+        if node_idx in edges:
+            for neighbor in edges[node_idx]:
+                if neighbor not in seen:
+                    stack.append(neighbor)
+            seen.add(node_idx)
 
-    connected = len(seen) < data.num_nodes
+    connected = len(seen) == len(model)
 
     return 1.0 if connected else 0.0, connected
+
+
+def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
+    from transformers import CLIPProcessor, CLIPModel
+
+    clip = CLIPModel.from_pretrained(model_url)
+    processor = CLIPProcessor.from_pretrained(model_url)
+
+    def clip_scorer(
+        model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv"
+    ) -> tuple[float, bool]:
+        """
+        Returns the score returned by CLIP.
+        """
+        prompt = env.prompt
+        imgs = env.screenshot()
+        inputs = processor(
+            text=[prompt],
+            images=imgs,
+            return_tensors="pt",
+            padding=True,
+            do_rescale=False,
+        )
+
+        outputs = clip(**inputs)
+        logits_per_image = outputs.logits_per_image
+        score = logits_per_image.mean().item() / 30.0
+        return score, False
+
+    return clip_scorer
 
 
 if __name__ == "__main__":
@@ -305,14 +355,19 @@ if __name__ == "__main__":
     elif cfg.score_fn == "connect":
         score_fn = connect_scorer
         start_fn = connect_start
+    elif cfg.score_fn == "clip":
+        score_fn = create_clip_scorer()
+        start_fn = single_start
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
+    prompts = [cfg.prompt + l for l in LABELS]
     env = ConstructionEnv(
         score_fn=score_fn,
         start_fn=start_fn,
         max_actions_per_step=cfg.max_actions_per_step,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
+        prompts=prompts
     )
     test_env = ConstructionEnv(
         score_fn=score_fn,
@@ -320,6 +375,7 @@ if __name__ == "__main__":
         max_actions_per_step=cfg.max_actions_per_step,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
+        prompts=prompts
     )
 
     # Initialize Q network

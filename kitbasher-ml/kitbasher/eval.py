@@ -8,9 +8,11 @@ from matplotlib import pyplot as plt
 import numpy as np
 import torch
 from kitbasher.train import (
+    LABELS,
     QNet,
     connect_scorer,
     connect_start,
+    create_clip_scorer,
     get_action,
     process_act_masks,
     process_obs,
@@ -29,6 +31,7 @@ class Config:
     )
     max_eval_steps: int = 8
     max_actions_per_step: int = 100
+    prompt: str = "a lego "
     device: str = "cuda"
 
 
@@ -52,8 +55,12 @@ if __name__ == "__main__":
     elif cfg.score_fn == "connect":
         score_fn = connect_scorer
         start_fn = connect_start
+    elif cfg.score_fn == "clip":
+        score_fn = create_clip_scorer()
+        start_fn = single_start
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
+    prompts = [cfg.prompt + l for l in LABELS]
     env = ConstructionEnv(
         score_fn=score_fn,
         start_fn=start_fn,
@@ -61,6 +68,7 @@ if __name__ == "__main__":
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
         visualize=True,
+        prompts=prompts,
     )
 
     # Initialize Q network
@@ -84,7 +92,7 @@ if __name__ == "__main__":
             env.render()
 
             # Show model scoring screenshot
-            plt.imshow(env.screenshot())
+            plt.imshow(env.screenshot()[0])
             plt.show()
 
             eval_obs = eval_obs = process_obs(obs_)
