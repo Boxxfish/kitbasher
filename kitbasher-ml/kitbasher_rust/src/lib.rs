@@ -403,6 +403,13 @@ impl Renderer {
                 )))
             })
             .collect();
+        let mut model_bbox: AABB = model[0]
+            .bboxes
+            .iter()
+            .copied()
+            .reduce(|a, b| AABB::from(a).union(&b.into()).into())
+            .unwrap()
+            .into();
         for placed in &model {
             let part_model = part_models[placed.part_id].clone();
             let part_model_outline = part_model_outlines[placed.part_id].clone();
@@ -421,17 +428,31 @@ impl Renderer {
                 )),
             );
             let mut c1 = window.add_mesh(part_model, Vector3::new(1., 1., 1.));
-            c1.set_color(0., 0., 0.);
+            c1.set_color(1., 0., 0.);
             c1.prepend_to_local_transformation(&part_xform);
 
             let mut c2 = window.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
             c2.set_color(0., 0., 0.);
             c2.enable_backface_culling(true);
             c2.prepend_to_local_transformation(&part_xform);
+
+            // Update model bbox
+            model_bbox = model_bbox.union(
+                &placed
+                    .bboxes
+                    .iter()
+                    .map(|bbox| AABB {
+                        center: Vec3::from(bbox.center) + Vec3::from(placed.position),
+                        half_sizes: bbox.half_sizes.into(),
+                    })
+                    .reduce(|a, b| a.union(&b))
+                    .unwrap(),
+            );
         }
-        let eye = kiss3d::nalgebra::Point3::new(100., 50., 100.);
-        let at = kiss3d::nalgebra::Point3::origin();
-        let mut fp = FirstPerson::new(eye, at);
+        let model_center = nalgebra::Vector3::from(model_bbox.center.to_array());
+        let eye = nalgebra::Vector3::new(100., 50., 100.) + model_center;
+        let at = model_center;
+        let mut fp = FirstPerson::new(eye.into(), at.into());
         fp.set_up_axis(-nalgebra::Vector3::y());
         window.set_light(kiss3d::light::Light::StickToCamera);
         window.set_background_color(1., 1., 1.);
