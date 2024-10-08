@@ -304,7 +304,6 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
         outputs = clip(**inputs)
         logits_per_image = outputs.logits_per_image
         score = logits_per_image.mean().item() / 30.0
-        print(prompt, ", Score:", score)
         return score, False
 
     return clip_scorer
