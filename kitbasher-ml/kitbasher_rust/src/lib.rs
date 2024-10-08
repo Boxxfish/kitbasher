@@ -375,8 +375,8 @@ impl Renderer {
     }
 
     /// Renders the model to an image and returns a byte array.
-    pub fn render_model(&self, model: Vec<PyPlacedConfig>) -> Vec<u8> {
-        let mut window = Window::new_with_size("Model Renderer", 256, 256);
+    pub fn render_model(&self, model: Vec<PyPlacedConfig>) -> (Vec<u8>, Vec<u8>) {
+        let mut window = Window::new_with_size("Model Renderer", 512, 512);
         let part_models: Vec<_> = self
             .part_models
             .iter()
@@ -449,18 +449,30 @@ impl Renderer {
                     .unwrap(),
             );
         }
-        let model_center = nalgebra::Vector3::from(model_bbox.center.to_array());
-        let eye = nalgebra::Vector3::new(100., 50., 100.) + model_center;
-        let at = model_center;
-        let mut fp = FirstPerson::new(eye.into(), at.into());
-        fp.set_up_axis(-nalgebra::Vector3::y());
         window.set_light(kiss3d::light::Light::StickToCamera);
         window.set_background_color(1., 1., 1.);
+
+        let model_center = nalgebra::Vector3::from(model_bbox.center.to_array());
+        let at = model_center;
+
+        // Render both front and back
+        let eye = nalgebra::Vector3::new(100., 50., 100.) + model_center;
+        let mut fp = FirstPerson::new(eye.into(), at.into());
+        fp.set_up_axis(-nalgebra::Vector3::y());
         window.render_with_camera(&mut fp);
 
-        let mut buffer = Vec::new();
-        window.snap(&mut buffer);
-        buffer
+        let mut buffer1 = Vec::new();
+        window.snap(&mut buffer1);
+
+        let eye = nalgebra::Vector3::new(-100., 50., -100.) + model_center;
+        let mut fp = FirstPerson::new(eye.into(), at.into());
+        fp.set_up_axis(-nalgebra::Vector3::y());
+        window.render_with_camera(&mut fp);
+
+        let mut buffer2 = Vec::new();
+        window.snap(&mut buffer2);
+
+        (buffer1, buffer2)
     }
 }
 

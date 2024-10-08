@@ -63,7 +63,9 @@ class PartModel:
 class ConstructionEnv(gym.Env):
     def __init__(
         self,
-        score_fn: Callable[[List[PyPlacedConfig], Data, "ConstructionEnv"], tuple[float, bool]],
+        score_fn: Callable[
+            [List[PyPlacedConfig], Data, "ConstructionEnv"], tuple[float, bool]
+        ],
         start_fn: Callable[[EngineWrapper], None],
         use_potential: bool,
         max_actions_per_step: int,
@@ -88,7 +90,9 @@ class ConstructionEnv(gym.Env):
         self.last_score = 0.0
         self.prompt = ""
         self.prompts = prompts
-        self.renderer = Renderer([part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS])
+        self.renderer = Renderer(
+            [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS]
+        )
         self.label_idx = 0
         if visualize:
             rr.init("Construction")
@@ -150,12 +154,14 @@ class ConstructionEnv(gym.Env):
         self.prompt = self.prompts[self.label_idx]
         return obs, {}
 
-    def screenshot(self) -> np.ndarray:
+    def screenshot(self) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Returns a render of the model.
+        Returns a front and back render of the model.
         """
-        buffer = self.renderer.render_model(self.model)
-        return np.array(buffer).reshape([256, 256, 3])[:, ::-1, :] / 255
+        buffers = self.renderer.render_model(self.model)
+        return tuple(
+            np.array(b).reshape([512, 512, 3])[:, ::-1, :] / 255 for b in buffers
+        )
 
     def gen_obs(self) -> Data:
         self.model = self.engine.get_model()
@@ -168,7 +174,7 @@ class ConstructionEnv(gym.Env):
         place_configs = self.engine.gen_candidates()
         random.shuffle(place_configs)
         self.place_configs = place_configs[: self.max_actions_per_step]
-        
+
         # Create graph features
         part_ids = []
         nodes = []

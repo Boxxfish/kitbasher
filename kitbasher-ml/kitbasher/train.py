@@ -25,7 +25,6 @@ from safetensors.torch import save_model
 from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
 from kitbasher.env import ConstructionEnv
-from kitbasher_rust.kitbasher_rust import Renderer
 
 _: Any
 INF = 10**8
@@ -293,10 +292,10 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
         Returns the score returned by CLIP.
         """
         prompt = env.prompt
-        img = env.screenshot()
+        imgs = env.screenshot()
         inputs = processor(
             text=[prompt],
-            images=img,
+            images=imgs,
             return_tensors="pt",
             padding=True,
             do_rescale=False,
@@ -304,7 +303,8 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
 
         outputs = clip(**inputs)
         logits_per_image = outputs.logits_per_image
-        score = logits_per_image[0].item()
+        score = logits_per_image.mean().item() / 30.0
+        print(prompt, ", Score:", score)
         return score, False
 
     return clip_scorer
@@ -358,15 +358,17 @@ if __name__ == "__main__":
         start_fn = connect_start
     elif cfg.score_fn == "clip":
         score_fn = create_clip_scorer()
-        starT_fn = single_start
+        start_fn = single_start
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
+    prompts = [cfg.prompt + l for l in LABELS]
     env = ConstructionEnv(
         score_fn=score_fn,
         start_fn=start_fn,
         max_actions_per_step=cfg.max_actions_per_step,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
+        prompts=prompts
     )
     test_env = ConstructionEnv(
         score_fn=score_fn,
@@ -374,6 +376,7 @@ if __name__ == "__main__":
         max_actions_per_step=cfg.max_actions_per_step,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
+        prompts=prompts
     )
 
     # Initialize Q network
