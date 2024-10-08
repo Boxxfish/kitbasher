@@ -255,6 +255,8 @@ def connect_scorer(
     # Set up adjacency list
     edges: Dict[int, List[int]] = {}
     for e1, e2 in data.edge_index.T.tolist():
+        if e1 >= len(model) or e2 >= len(model):
+            continue
         if e1 not in edges:
             edges[e1] = []
         if e2 not in edges:
@@ -267,12 +269,13 @@ def connect_scorer(
     stack = [0]
     while len(stack) > 0:
         node_idx = stack.pop()
-        for neighbor in edges[node_idx]:
-            if neighbor not in seen:
-                stack.append(neighbor)
-        seen.add(node_idx)
+        if node_idx in edges:
+            for neighbor in edges[node_idx]:
+                if neighbor not in seen:
+                    stack.append(neighbor)
+            seen.add(node_idx)
 
-    connected = len(seen) < data.num_nodes
+    connected = len(seen) == len(model)
 
     return 1.0 if connected else 0.0, connected
 
