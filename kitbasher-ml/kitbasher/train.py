@@ -427,6 +427,10 @@ if __name__ == "__main__":
                 )
                 obs = next_obs
                 mask = next_mask
+                if done or trunc:
+                    obs_, info = env.reset()
+                    obs = process_obs(obs_)
+                    mask = process_act_masks(obs_)
 
         # Train
         if buffer.filled:
