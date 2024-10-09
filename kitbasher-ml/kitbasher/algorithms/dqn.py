@@ -38,27 +38,31 @@ def train_dqn(
         ) = buffer.sample(train_batch_size)
 
         # Move batch to device if applicable
-        prev_states = Batch.from_data_list(prev_states_).to(device=device)
-        states = Batch.from_data_list(states_).to(device=device)
+        prev_states: Batch = Batch.from_data_list(prev_states_).to(device=device)
+        states: Batch = Batch.from_data_list(states_).to(device=device)
         actions = actions.to(device=device)
         rewards = rewards.to(device=device)
         dones = dones.to(device=device)
 
+        # Check that states are contiguous (Commenting out for speed)
+        # assert torch.equal(prev_states.batch, prev_states.batch.sort()[0])
+        # assert torch.equal(states.batch, states.batch.sort()[0])
+
         # Train q network
         q_opt.zero_grad()
         prev_states_offsets_ = [0] + [
-            s.x.shape[0] + 1 for s in prev_states.to_data_list()
+            int(s.num_nodes) for s in prev_states.to_data_list()
         ][:-1]
         prev_states_offsets = torch.tensor(prev_states_offsets_, device=device).cumsum(
             0
         )  # Shape: (batch_size)
         with torch.no_grad():
             # Compute next actions
-            q_vals = q_net(prev_states)  # Shape: (num_nodes, 1)
+            q_vals = q_net(states)  # Shape: (num_nodes, 1)
             q_vals = torch.masked_fill(
-                q_vals, prev_states.action_mask.bool().unsqueeze(1), -torch.inf
+                q_vals, states.action_mask.bool().unsqueeze(1), -torch.inf
             )  # Shape: (num_nodes, 1)
-            unbatched_q_vals = utils.unbatch(q_vals, prev_states.batch, dim=0)
+            unbatched_q_vals = utils.unbatch(q_vals, states.batch, dim=0)
             next_actions_ = []
             offset = 0
             for q_vals in unbatched_q_vals:
