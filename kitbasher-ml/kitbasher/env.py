@@ -140,7 +140,7 @@ class ConstructionEnv(gym.Env):
             rotations[placed.part_id].append([rot.x, rot.y, rot.z, rot.w])
         for i, model in enumerate(self.models):
             model.render(translations[i], rotations[i])
-
+ 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
     ) -> tuple[Data, dict[str, Any]]:
@@ -149,7 +149,7 @@ class ConstructionEnv(gym.Env):
         self.timer = 0
         obs = self.gen_obs()
         if self.use_potential:
-            self.last_score, _ = self.score_fn(self.model, obs)
+            self.last_score, _ = self.score_fn(self.model, obs, self)
         self.label_idx = random.randrange(0, len(self.prompts))
         self.prompt = self.prompts[self.label_idx]
         return obs, {}
