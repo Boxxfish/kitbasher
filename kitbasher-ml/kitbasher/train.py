@@ -206,15 +206,15 @@ def volume_fill_scorer(
     Grants a reward of 1 for every part that touches the volume.
     """
     cx, cy, cz = [0.0, 0.0, 0.0]
-    hx, hy, hz = [20.0, 10.0, 5.0]
+    hx, hy, hz = [40.0, 10.0, 5.0]
     score = 0
     for placed in model:
         part_score = 1
         for bbox in placed.bboxes:
             if (
-                abs(bbox.center.x - cx) > (hx + bbox.half_sizes.x)
-                or abs(bbox.center.y - cy) > (hy + bbox.half_sizes.y)
-                or abs(bbox.center.z - cz) > (hz + bbox.half_sizes.z)
+                abs(placed.position.x + bbox.center.x - cx) > (hx + bbox.half_sizes.x)
+                or abs(placed.position.y + bbox.center.y - cy) > (hy + bbox.half_sizes.y)
+                or abs(placed.position.z + bbox.center.z - cz) > (hz + bbox.half_sizes.z)
             ):
                 part_score = 0
                 break

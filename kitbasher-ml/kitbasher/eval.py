@@ -4,6 +4,7 @@ import random
 from typing import *
 import gymnasium as gym
 from matplotlib import pyplot as plt
+import rerun as rr
 
 import numpy as np
 import torch
@@ -90,10 +91,15 @@ if __name__ == "__main__":
             # action, q_val = get_action(q_net, eval_obs, eval_mask)
             obs_, reward, done, trunc, info = env.step(action)
             env.render()
+            rr.log(
+                "volume", rr.Boxes3D(half_sizes=[40.0, 10.0, 5.0], centers=[0, 0, 0])
+            )
+            print(reward)
 
             # Show model scoring screenshot
             plt.imshow(env.screenshot()[0])
             plt.show()
+            print(reward)
 
             eval_obs = eval_obs = process_obs(obs_)
             eval_mask = process_act_masks(obs_)
