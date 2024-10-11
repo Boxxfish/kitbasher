@@ -78,7 +78,7 @@ if __name__ == "__main__":
     assert isinstance(obs_space, gym.spaces.Graph)
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
-    # q_net = QNet(1, obs_space.node_space.shape[0], 4)
+    # q_net = QNet(env.num_parts, 32, 3, obs_space.node_space.shape[0], 64, cfg.process_type)
     with torch.no_grad():
         obs_, info = env.reset()
         env.render()
@@ -94,7 +94,6 @@ if __name__ == "__main__":
             rr.log(
                 "volume", rr.Boxes3D(half_sizes=[40.0, 10.0, 5.0], centers=[0, 0, 0])
             )
-            print(reward)
 
             # Show model scoring screenshot
             plt.imshow(env.screenshot()[0])

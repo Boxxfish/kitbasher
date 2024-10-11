@@ -200,7 +200,7 @@ def single_start(engine: EngineWrapper):
 
 
 def volume_fill_scorer(
-    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv"
+    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
 ) -> tuple[float, bool]:
     """
     Grants a reward of 1 for every part that touches the volume.
@@ -246,7 +246,7 @@ def connect_start(engine: EngineWrapper):
 
 
 def connect_scorer(
-    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv"
+    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
 ) -> tuple[float, bool]:
     """
     Returns 1 and ends the episode if the model is connected.
@@ -286,11 +286,13 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
     processor = CLIPProcessor.from_pretrained(model_url)
 
     def clip_scorer(
-        model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv"
+        model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
     ) -> tuple[float, bool]:
         """
         Returns the score returned by CLIP.
         """
+        if not is_done:
+            return 0.0, False
         prompt = env.prompt
         imgs = env.screenshot()
         inputs = processor(

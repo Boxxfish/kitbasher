@@ -64,7 +64,7 @@ class ConstructionEnv(gym.Env):
     def __init__(
         self,
         score_fn: Callable[
-            [List[PyPlacedConfig], Data, "ConstructionEnv"], tuple[float, bool]
+            [List[PyPlacedConfig], Data, "ConstructionEnv", bool], tuple[float, bool]
         ],
         start_fn: Callable[[EngineWrapper], None],
         use_potential: bool,
@@ -117,14 +117,14 @@ class ConstructionEnv(gym.Env):
         done = self.timer == self.max_steps
         obs = self.gen_obs()
         if self.use_potential:
-            new_score, d = self.score_fn(self.model, obs, self)
+            new_score, d = self.score_fn(self.model, obs, self, done)
             done = done or d
             reward = new_score - self.last_score
             self.last_score = new_score
         else:
             # Reward at end
             reward = 0.0
-            new_score, d = self.score_fn(self.model, obs, self)
+            new_score, d = self.score_fn(self.model, obs, self, done)
             done = done or d
             if done:
                 reward = new_score
@@ -149,7 +149,7 @@ class ConstructionEnv(gym.Env):
         self.timer = 0
         obs = self.gen_obs()
         if self.use_potential:
-            self.last_score, _ = self.score_fn(self.model, obs, self)
+            self.last_score, _ = self.score_fn(self.model, obs, self, False)
         self.label_idx = random.randrange(0, len(self.prompts))
         self.prompt = self.prompts[self.label_idx]
         return obs, {}
