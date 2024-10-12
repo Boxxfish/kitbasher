@@ -5,6 +5,7 @@ from typing import *
 import gymnasium as gym
 from matplotlib import pyplot as plt
 import rerun as rr
+from safetensors.torch import load_model
 
 import numpy as np
 import torch
@@ -34,6 +35,7 @@ class Config:
     max_actions_per_step: int = 100
     process_layers: int = 3
     prompt: str = "a lego "
+    checkpoint: str
     device: str = "cuda"
 
 
@@ -79,17 +81,21 @@ if __name__ == "__main__":
     assert isinstance(obs_space, gym.spaces.Graph)
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
-    q_net = QNet(env.num_parts, 32, cfg.process_layers, obs_space.node_space.shape[0], 64, cfg.process_type)
+    if cfg.checkpoint:
+        q_net = QNet(env.num_parts, 32, cfg.process_layers, obs_space.node_space.shape[0], 64, cfg.process_type)
+        load_model(q_net, cfg.checkpoint)
     with torch.no_grad():
         obs_, info = env.reset()
         env.render()
         eval_obs = process_obs(obs_)
         eval_mask = process_act_masks(obs_)
         for _ in range(cfg.max_eval_steps):
-            action = action = random.choice(
-                [i for i, b in enumerate((~eval_mask.bool()).tolist()) if b]
-            )
-            # action, q_val = get_action(q_net, eval_obs, eval_mask)
+            if cfg.checkpoint:
+                action, q_val = get_action(q_net, eval_obs, eval_mask)
+            else:
+                action = action = random.choice(
+                    [i for i, b in enumerate((~eval_mask.bool()).tolist()) if b]
+                )
             obs_, reward, done, trunc, info = env.step(action)
             env.render()
             rr.log(
@@ -97,11 +103,11 @@ if __name__ == "__main__":
             )
 
             # Show model scoring screenshot
-            plt.imshow(env.screenshot()[0])
-            plt.show()
-            plt.imshow(env.screenshot()[1])
-            plt.show()
-            print(reward)
+            # plt.imshow(env.screenshot()[0])
+            # plt.show()
+            # plt.imshow(env.screenshot()[1])
+            # plt.show()
+            # print(reward)
 
             eval_obs = eval_obs = process_obs(obs_)
             eval_mask = process_act_masks(obs_)
