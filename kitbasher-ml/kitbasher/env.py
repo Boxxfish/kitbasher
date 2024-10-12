@@ -160,7 +160,7 @@ class ConstructionEnv(gym.Env):
         """
         buffers = self.renderer.render_model(self.model)
         return tuple(
-            np.array(b).reshape([512, 512, 3])[:, ::-1, :] / 255 for b in buffers
+                np.array(b).reshape([512, 512, 3])[:, ::-1, :] / 255 for b in buffers
         )
 
     def gen_obs(self) -> Data:

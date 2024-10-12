@@ -464,13 +464,15 @@ impl Renderer {
         let mut fp = FirstPerson::new(eye.into(), at.into());
         fp.set_up_axis(-nalgebra::Vector3::y());
         window.render_with_camera(&mut fp);
+        window.render_with_camera(&mut fp);
 
         let mut buffer1 = Vec::new();
         window.snap(&mut buffer1);
-
+        
         let eye = nalgebra::Vector3::new(-100., 50., -100.) + model_center;
         let mut fp = FirstPerson::new(eye.into(), at.into());
         fp.set_up_axis(-nalgebra::Vector3::y());
+        window.render_with_camera(&mut fp);
         window.render_with_camera(&mut fp);
 
         let mut buffer2 = Vec::new();

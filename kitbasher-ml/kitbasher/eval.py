@@ -98,6 +98,8 @@ if __name__ == "__main__":
             # Show model scoring screenshot
             plt.imshow(env.screenshot()[0])
             plt.show()
+            plt.imshow(env.screenshot()[1])
+            plt.show()
             print(reward)
 
             eval_obs = eval_obs = process_obs(obs_)

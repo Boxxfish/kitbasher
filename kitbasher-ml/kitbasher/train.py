@@ -30,16 +30,16 @@ _: Any
 INF = 10**8
 
 LABELS = [
-    "sports car",
-    "rowboat",
-    "motorcycle",
-    "tractor",
-    "train",
-    "helicopter",
-    "plane",
-    "spaceship",
+#    "sports car",
+#    "rowboat",
+#    "motorcycle",
+#    "tractor",
+#    "train",
+#    "helicopter",
+#    "plane",
+#    "spaceship",
     "skateboard",
-    "hot air balloon",
+#    "hot air balloon",
 ]
 
 # Hyperparameters
