@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 import copy
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import random
@@ -14,6 +15,7 @@ from torch_geometric.nn import DeepSetsAggregation  # type: ignore
 from torch_geometric.nn import Sequential  # type: ignore
 from torch_geometric.nn import aggr
 from torch import Tensor
+from pydantic import BaseModel
 
 import torch
 import torch.nn as nn
@@ -30,21 +32,21 @@ _: Any
 INF = 10**8
 
 LABELS = [
-#    "sports car",
-#    "rowboat",
-#    "motorcycle",
-#    "tractor",
-#    "train",
-#    "helicopter",
-#    "plane",
-#    "spaceship",
+    "sports car",
+    "rowboat",
+    "motorcycle",
+    "tractor",
+    "train",
+    "helicopter",
+    "plane",
+    "spaceship",
     "skateboard",
-#    "hot air balloon",
+    "hot air balloon",
 ]
 
+
 # Hyperparameters
-@dataclass
-class Config:
+class Config(BaseModel):
     train_steps: int = 1  # Number of steps to step through during sampling.
     iterations: int = 100000  # Number of sample/train iterations.
     train_iters: int = 1  # Number of passes over the samples collected.
@@ -78,10 +80,15 @@ class Config:
         100  # The maximum number of placements the environment provides at each step.
     )
     prompt: str = "a lego "
-    process_layers: int = 2 # The number of layers in the process step.
+    process_layers: int = 2  # The number of layers in the process step.
     eval_every: int = 100
     out_dir: str = "runs"
+    single_class: str = ""
     device: str = "cuda"
+
+
+class ExpMeta(BaseModel):
+    args: Config
 
 
 class Lambda(nn.Module):
@@ -214,8 +221,10 @@ def volume_fill_scorer(
         for bbox in placed.bboxes:
             if (
                 abs(placed.position.x + bbox.center.x - cx) > (hx + bbox.half_sizes.x)
-                or abs(placed.position.y + bbox.center.y - cy) > (hy + bbox.half_sizes.y)
-                or abs(placed.position.z + bbox.center.z - cz) > (hz + bbox.half_sizes.z)
+                or abs(placed.position.y + bbox.center.y - cy)
+                > (hy + bbox.half_sizes.y)
+                or abs(placed.position.z + bbox.center.z - cz)
+                > (hz + bbox.half_sizes.z)
             ):
                 part_score = 0
                 break
@@ -315,13 +324,15 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
 if __name__ == "__main__":
     cfg = Config()
     parser = ArgumentParser()
-    for k, v in cfg.__dict__.items():
-        if isinstance(v, bool):
+    for k, v in cfg.model_fields.items():
+        if v.annotation == bool:
             parser.add_argument(
-                f"--{k.replace('_', '-')}", default=v, action="store_true"
+                f"--{k.replace('_', '-')}", default=v.default, action="store_true"
             )
         else:
-            parser.add_argument(f"--{k.replace('_', '-')}", default=v, type=type(v))
+            parser.add_argument(
+                f"--{k.replace('_', '-')}", default=v.default, type=v.annotation
+            )
     args = parser.parse_args()
     cfg = Config(**args.__dict__)
     device = torch.device(cfg.device)
@@ -342,11 +353,16 @@ if __name__ == "__main__":
         out_id = "testing"
 
     out_dir = Path(cfg.out_dir)
+    exp_dir = out_dir / out_id
     try:
-        os.mkdir(out_dir / out_id)
+        os.mkdir(exp_dir)
     except OSError as e:
         print(e)
-    chkpt_path = out_dir / out_id / "checkpoints"
+    meta = ExpMeta(args=cfg)
+    with open(exp_dir / "meta.json", "w") as f:
+        json.dump(meta, f)
+
+    chkpt_path = exp_dir / "checkpoints"
     try:
         os.mkdir(chkpt_path)
     except OSError as e:
@@ -370,7 +386,7 @@ if __name__ == "__main__":
         max_actions_per_step=cfg.max_actions_per_step,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
-        prompts=prompts
+        prompts=prompts,
     )
     test_env = ConstructionEnv(
         score_fn=score_fn,
@@ -378,7 +394,7 @@ if __name__ == "__main__":
         max_actions_per_step=cfg.max_actions_per_step,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
-        prompts=prompts
+        prompts=prompts,
     )
 
     # Initialize Q network
@@ -388,7 +404,12 @@ if __name__ == "__main__":
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
     q_net = QNet(
-        env.num_parts, 32, cfg.process_layers, obs_space.node_space.shape[0], 64, cfg.process_type
+        env.num_parts,
+        32,
+        cfg.process_layers,
+        obs_space.node_space.shape[0],
+        64,
+        cfg.process_type,
     )
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
