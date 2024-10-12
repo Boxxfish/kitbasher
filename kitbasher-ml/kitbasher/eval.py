@@ -32,6 +32,7 @@ class Config:
     )
     max_eval_steps: int = 8
     max_actions_per_step: int = 100
+    process_layers: int = 3
     prompt: str = "a lego "
     device: str = "cuda"
 
@@ -78,7 +79,7 @@ if __name__ == "__main__":
     assert isinstance(obs_space, gym.spaces.Graph)
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
-    # q_net = QNet(env.num_parts, 32, 3, obs_space.node_space.shape[0], 64, cfg.process_type)
+    q_net = QNet(env.num_parts, 32, cfg.process_layers, obs_space.node_space.shape[0], 64, cfg.process_type)
     with torch.no_grad():
         obs_, info = env.reset()
         env.render()

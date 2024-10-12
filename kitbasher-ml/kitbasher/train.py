@@ -78,6 +78,7 @@ class Config:
         100  # The maximum number of placements the environment provides at each step.
     )
     prompt: str = "a lego "
+    process_layers: int = 2 # The number of layers in the process step.
     eval_every: int = 100
     out_dir: str = "runs"
     device: str = "cuda"
@@ -387,7 +388,7 @@ if __name__ == "__main__":
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
     q_net = QNet(
-        env.num_parts, 32, 3, obs_space.node_space.shape[0], 64, cfg.process_type
+        env.num_parts, 32, cfg.process_layers, obs_space.node_space.shape[0], 64, cfg.process_type
     )
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
