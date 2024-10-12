@@ -58,9 +58,6 @@ class Config(BaseModel):
     eval_steps: int = 8  # Number of eval runs to average over.
     max_eval_steps: int = 300  # Max number of steps to take during each eval run.
     q_lr: float = 0.0001  # Learning rate of the q net.
-    warmup_steps: int = (
-        500  # For the first n number of steps, we will only sample randomly.
-    )
     buffer_size: int = 10_000  # Number of elements that can be stored in the buffer.
     target_update: int = 500  # Number of iterations before updating Q target.
     save_every: int = 100
@@ -424,15 +421,16 @@ if __name__ == "__main__":
     obs_, info = env.reset()
     obs = process_obs(obs_)
     mask = process_act_masks(obs_)
-    for step in tqdm(range(cfg.iterations), position=0):
-        percent_done = step / cfg.iterations
+    warmup_steps = (cfg.buffer_size / cfg.train_steps)
+    for step in tqdm(range(warmup_steps + cfg.iterations), position=0):
+        percent_done = max((step - warmup_steps) / cfg.iterations, 0)
 
         # Collect experience
         with torch.no_grad():
             for _ in range(cfg.train_steps):
                 if (
                     random.random() < cfg.q_epsilon * max(1.0 - percent_done, 0.05)
-                    or step < cfg.warmup_steps
+                    or not buffer.filled
                 ):
                     action = random.choice(
                         [i for i, b in enumerate((~mask.bool()).tolist()) if b]
