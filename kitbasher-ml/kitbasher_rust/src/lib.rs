@@ -368,6 +368,7 @@ impl Renderer {
                 }
             }
         }
+
         Self {
             part_models,
             part_model_outlines,
@@ -377,6 +378,10 @@ impl Renderer {
     /// Renders the model to an image and returns a byte array.
     pub fn render_model(&self, model: Vec<PyPlacedConfig>) -> (Vec<u8>, Vec<u8>) {
         let mut window = Window::new_with_size("Model Renderer", 512, 512);
+        window.set_light(kiss3d::light::Light::StickToCamera);
+        window.set_background_color(1., 1., 1.);
+        window.render();
+
         let part_models: Vec<_> = self
             .part_models
             .iter()
@@ -410,6 +415,7 @@ impl Renderer {
             .reduce(|a, b| AABB::from(a).union(&b.into()).into())
             .unwrap()
             .into();
+        let mut root = window.add_group();
         for placed in &model {
             let part_model = part_models[placed.part_id].clone();
             let part_model_outline = part_model_outlines[placed.part_id].clone();
@@ -427,11 +433,11 @@ impl Renderer {
                     placed.rotation.z,
                 )),
             );
-            let mut c1 = window.add_mesh(part_model, Vector3::new(1., 1., 1.));
+            let mut c1 = root.add_mesh(part_model, Vector3::new(1., 1., 1.));
             c1.set_color(1., 0., 0.);
             c1.prepend_to_local_transformation(&part_xform);
 
-            let mut c2 = window.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
+            let mut c2 = root.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
             c2.set_color(0., 0., 0.);
             c2.enable_backface_culling(true);
             c2.prepend_to_local_transformation(&part_xform);
@@ -449,8 +455,6 @@ impl Renderer {
                     .unwrap(),
             );
         }
-        window.set_light(kiss3d::light::Light::StickToCamera);
-        window.set_background_color(1., 1., 1.);
 
         let model_center = nalgebra::Vector3::from(model_bbox.center.to_array());
         let at = model_center;
@@ -460,13 +464,15 @@ impl Renderer {
         let mut fp = FirstPerson::new(eye.into(), at.into());
         fp.set_up_axis(-nalgebra::Vector3::y());
         window.render_with_camera(&mut fp);
+        window.render_with_camera(&mut fp);
 
         let mut buffer1 = Vec::new();
         window.snap(&mut buffer1);
-
+        
         let eye = nalgebra::Vector3::new(-100., 50., -100.) + model_center;
         let mut fp = FirstPerson::new(eye.into(), at.into());
         fp.set_up_axis(-nalgebra::Vector3::y());
+        window.render_with_camera(&mut fp);
         window.render_with_camera(&mut fp);
 
         let mut buffer2 = Vec::new();
