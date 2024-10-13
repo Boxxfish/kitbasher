@@ -302,7 +302,7 @@ impl EngineWrapper {
 
 #[pyclass]
 struct Renderer {
-    part_models: Vec<kiss3d::resource::Mesh>,
+    part_models: Vec<(kiss3d::resource::Mesh, Vec3)>,
     part_model_outlines: Vec<kiss3d::resource::Mesh>,
 }
 
@@ -328,6 +328,9 @@ impl Renderer {
                             let reader = prim.reader(|buffer| {
                                 buffers.get(buffer.index()).map(|data| &data.0[..])
                             });
+                            let color =
+                                prim.material().pbr_metallic_roughness().base_color_factor();
+                            let color = Vec3::new(color[0], color[1], color[2]);
                             let positions: Vec<_> = reader
                                 .read_positions()
                                 .unwrap()
@@ -361,7 +364,7 @@ impl Renderer {
                                 None,
                                 false,
                             );
-                            part_models.push(part_mesh);
+                            part_models.push((part_mesh, color));
                             part_model_outlines.push(part_mesh_outline);
                         }
                     }
@@ -385,12 +388,24 @@ impl Renderer {
         let part_models: Vec<_> = self
             .part_models
             .iter()
-            .map(|m| {
+            .map(|(mesh, _)| {
                 Rc::new(RefCell::new(Mesh::new(
-                    m.coords().read().unwrap().data().as_ref().unwrap().clone(),
-                    m.faces().read().unwrap().data().as_ref().unwrap().clone(),
-                    m.normals().read().unwrap().data().clone(),
-                    m.uvs().read().unwrap().data().clone(),
+                    mesh.coords()
+                        .read()
+                        .unwrap()
+                        .data()
+                        .as_ref()
+                        .unwrap()
+                        .clone(),
+                    mesh.faces()
+                        .read()
+                        .unwrap()
+                        .data()
+                        .as_ref()
+                        .unwrap()
+                        .clone(),
+                    mesh.normals().read().unwrap().data().clone(),
+                    mesh.uvs().read().unwrap().data().clone(),
                     false,
                 )))
             })
@@ -417,6 +432,7 @@ impl Renderer {
             .into();
         let mut root = window.add_group();
         for placed in &model {
+            let color = self.part_models[placed.part_id].1;
             let part_model = part_models[placed.part_id].clone();
             let part_model_outline = part_model_outlines[placed.part_id].clone();
             // Render both original part and outline
@@ -434,7 +450,7 @@ impl Renderer {
                 )),
             );
             let mut c1 = root.add_mesh(part_model, Vector3::new(1., 1., 1.));
-            c1.set_color(1., 0., 0.);
+            c1.set_color(color.x, color.y, color.z);
             c1.prepend_to_local_transformation(&part_xform);
 
             let mut c2 = root.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
@@ -468,7 +484,7 @@ impl Renderer {
 
         let mut buffer1 = Vec::new();
         window.snap(&mut buffer1);
-        
+
         let eye = nalgebra::Vector3::new(-100., 50., -100.) + model_center;
         let mut fp = FirstPerson::new(eye.into(), at.into());
         fp.set_up_axis(-nalgebra::Vector3::y());
