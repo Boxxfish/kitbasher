@@ -35,7 +35,7 @@ class Config:
     max_actions_per_step: int = 100
     process_layers: int = 3
     prompt: str = "a lego "
-    checkpoint: str
+    checkpoint: str = ""
     device: str = "cuda"
 
 
@@ -103,11 +103,11 @@ if __name__ == "__main__":
             )
 
             # Show model scoring screenshot
-            # plt.imshow(env.screenshot()[0])
-            # plt.show()
+            plt.imshow(env.screenshot()[0])
+            plt.show()
             # plt.imshow(env.screenshot()[1])
             # plt.show()
-            # print(reward)
+            print(reward)
 
             eval_obs = eval_obs = process_obs(obs_)
             eval_mask = process_act_masks(obs_)
