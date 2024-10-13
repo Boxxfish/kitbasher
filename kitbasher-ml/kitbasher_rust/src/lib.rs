@@ -247,14 +247,18 @@ pub struct EngineWrapper {
 #[pymethods]
 impl EngineWrapper {
     #[new]
-    pub fn new(part_paths: Vec<String>, connect_rules: Vec<[usize; 2]>) -> EngineWrapper {
+    pub fn new(
+        part_paths: Vec<String>,
+        connect_rules: Vec<[usize; 2]>,
+        use_mirror: bool,
+    ) -> EngineWrapper {
         let mut parts = Vec::new();
         for path in &part_paths {
             let content = std::fs::read_to_string(path).unwrap();
             let part = ron::from_str(&content).unwrap();
             parts.push(part);
         }
-        let engine = KBEngine::new(&parts, &connect_rules);
+        let engine = KBEngine::new(&parts, &connect_rules, use_mirror);
         EngineWrapper { engine }
     }
 
@@ -304,12 +308,13 @@ impl EngineWrapper {
 struct Renderer {
     part_models: Vec<(kiss3d::resource::Mesh, Vec3)>,
     part_model_outlines: Vec<kiss3d::resource::Mesh>,
+    use_mirror: bool,
 }
 
 #[pymethods]
 impl Renderer {
     #[new]
-    pub fn new(part_paths: Vec<String>) -> Self {
+    pub fn new(part_paths: Vec<String>, use_mirror: bool) -> Self {
         let mut part_models = Vec::new();
         let mut part_model_outlines = Vec::new();
         for path in &part_paths {
@@ -375,6 +380,7 @@ impl Renderer {
         Self {
             part_models,
             part_model_outlines,
+            use_mirror,
         }
     }
 
@@ -431,6 +437,8 @@ impl Renderer {
             .unwrap()
             .into();
         let mut root = window.add_group();
+        let mut mirrored_root = window.add_group();
+        mirrored_root.set_local_scale(-1., 1., 1.);
         for placed in &model {
             let color = self.part_models[placed.part_id].1;
             let part_model = part_models[placed.part_id].clone();
@@ -457,6 +465,17 @@ impl Renderer {
             c2.set_color(0., 0., 0.);
             c2.enable_backface_culling(true);
             c2.prepend_to_local_transformation(&part_xform);
+
+            if self.use_mirror {
+                let mut c1 = mirrored_root.add_mesh(part_model, Vector3::new(1., 1., 1.));
+                c1.set_color(color.x, color.y, color.z);
+                c1.prepend_to_local_transformation(&part_xform);
+
+                let mut c2 = mirrored_root.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
+                c2.set_color(0., 0., 0.);
+                c2.enable_backface_culling(true);
+                c2.prepend_to_local_transformation(&part_xform);
+            }
 
             // Update model bbox
             model_bbox = model_bbox.union(
