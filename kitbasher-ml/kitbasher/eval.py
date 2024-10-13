@@ -1,5 +1,7 @@
 from argparse import ArgumentParser
 from dataclasses import dataclass
+import json
+from pathlib import Path
 import random
 from typing import *
 import gymnasium as gym
@@ -9,6 +11,7 @@ from safetensors.torch import load_model
 
 import numpy as np
 import torch
+from kitbasher import train
 from kitbasher.train import (
     LABELS,
     QNet,
@@ -33,7 +36,6 @@ class Config:
     )
     max_eval_steps: int = 8
     max_actions_per_step: int = 100
-    process_layers: int = 3
     prompt: str = "a lego "
     checkpoint: str = ""
     device: str = "cuda"
@@ -82,7 +84,18 @@ if __name__ == "__main__":
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
     if cfg.checkpoint:
-        q_net = QNet(env.num_parts, 32, cfg.process_layers, obs_space.node_space.shape[0], 64, cfg.process_type)
+        with open(Path(cfg.checkpoint).parent / "meta.json", "r") as f:
+            meta_json = json.load(f)
+        train_cfg = train.Config.model_validate_json(meta_json)
+        q_net = QNet(
+            env.num_parts,
+            32,
+            train_cfg.process_layers,
+            obs_space.node_space.shape[0],
+            64,
+            train_cfg.process_type,
+            train_cfg.tanh_logit,
+        )
         load_model(q_net, cfg.checkpoint)
     with torch.no_grad():
         obs_, info = env.reset()

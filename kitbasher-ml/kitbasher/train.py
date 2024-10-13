@@ -78,6 +78,7 @@ class Config(BaseModel):
     )
     prompt: str = "a lego "
     process_layers: int = 2  # The number of layers in the process step.
+    tanh_logit: bool = False # Whether we should apply the tanh activation function on the q value.
     eval_every: int = 100
     out_dir: str = "runs"
     single_class: str = ""
@@ -110,6 +111,7 @@ class QNet(nn.Module):
         node_feature_dim: int,
         hidden_dim: int,
         process_type: str,
+        tanh_logit: bool,
     ):
         nn.Module.__init__(self)
         assert process_type in ["deep_set", "gcn", "self_attn", "independent"]
@@ -154,6 +156,7 @@ class QNet(nn.Module):
         self.value = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1)
         )
+        self.tanh_logit = tanh_logit
 
     def forward(self, data: Data):
         data = data.sort()
@@ -180,7 +183,10 @@ class QNet(nn.Module):
         value_x = self.mean_aggr(x, batch)  # Shape: (num_batches, hidden_dim)
         value = self.value(value_x)  # Shape: (num_batches, 1)
         value = torch.gather(value, 0, batch.unsqueeze(1))  # Shape: (num_nodes, 1)
-        return value + advantage - advantage_mean
+        q_val = value + advantage - advantage_mean
+        if self.tanh_logit:
+            q_val = torch.tanh(q_val)
+        return q_val
 
 
 def get_action(q_net: nn.Module, obs: Data, action_mask: Tensor) -> tuple[int, float]:
