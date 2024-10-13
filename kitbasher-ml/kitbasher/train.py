@@ -357,7 +357,7 @@ if __name__ == "__main__":
         print(e)
     meta = ExpMeta(args=cfg)
     with open(exp_dir / "meta.json", "w") as f:
-        json.dump(meta, f)
+        json.dump(meta.model_dump_json(), f)
 
     chkpt_path = exp_dir / "checkpoints"
     try:
