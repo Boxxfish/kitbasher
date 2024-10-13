@@ -1,0 +1,4 @@
+WANDB_ENTITY=bensgiacalone python kitbasher/train.py --process-type gcn --score-fn clip --train-batch-size 64 --buffer-size 10000 --warmup-steps 10000 --max-steps 16 --max-actions-per-step 100 --device cuda --eval-every 500 --process-layers 1
+WANDB_ENTITY=bensgiacalone python kitbasher/train.py --process-type gcn --score-fn clip --train-batch-size 64 --buffer-size 10000 --warmup-steps 10000 --max-steps 16 --max-actions-per-step 100 --device cuda --eval-every 500 --process-layers 5
+WANDB_ENTITY=bensgiacalone python kitbasher/train.py --process-type gcn --score-fn clip --train-batch-size 64 --buffer-size 10000 --warmup-steps 10000 --max-steps 16 --max-actions-per-step 100 --device cuda --eval-every 500 --process-layers 7
+WANDB_ENTITY=bensgiacalone python kitbasher/train.py --process-type gcn --score-fn clip --train-batch-size 64 --buffer-size 10000 --warmup-steps 10000 --max-steps 16 --max-actions-per-step 100 --device cuda --eval-every 500 --process-layers 9
