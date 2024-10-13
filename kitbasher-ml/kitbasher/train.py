@@ -421,7 +421,7 @@ if __name__ == "__main__":
     obs_, info = env.reset()
     obs = process_obs(obs_)
     mask = process_act_masks(obs_)
-    warmup_steps = (cfg.buffer_size / cfg.train_steps)
+    warmup_steps = int(cfg.buffer_size / cfg.train_steps)
     for step in tqdm(range(warmup_steps + cfg.iterations), position=0):
         percent_done = max((step - warmup_steps) / cfg.iterations, 0)
 
