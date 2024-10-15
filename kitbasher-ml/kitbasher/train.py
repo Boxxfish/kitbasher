@@ -509,7 +509,7 @@ if __name__ == "__main__":
                             eval_mask = process_act_masks(obs_)
                             steps_taken += 1
                             reward_total += reward
-                            episode_reward += 1
+                            episode_reward += reward
                             if done or trunc:
                                 obs_, info = test_env.reset()
                                 eval_obs = process_obs(obs_)
