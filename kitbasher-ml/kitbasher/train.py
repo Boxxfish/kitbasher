@@ -451,8 +451,9 @@ if __name__ == "__main__":
                     action, _ = get_action(q_net, obs, mask)
                 obs_, reward, done, trunc, info_ = env.step(action)
 
-                # Normalize reward
-                reward = (reward - cfg.norm_min) / (cfg.norm_max - cfg.norm_min)
+                # Normalize reward if last step
+                if (done or trunc) and not cfg.use_potential:
+                    reward = (reward - cfg.norm_min) / (cfg.norm_max - cfg.norm_min)
 
                 next_obs = process_obs(obs_)
                 next_mask = process_act_masks(obs_)
