@@ -80,6 +80,8 @@ class Config(BaseModel):
     process_layers: int = 2  # The number of layers in the process step.
     tanh_logit: bool = False # Whether we should apply the tanh activation function on the q value.
     eval_every: int = 100
+    norm_min: float = 0.7
+    norm_max: float = 1.2
     out_dir: str = "runs"
     single_class: str = ""
     device: str = "cuda"
@@ -448,6 +450,10 @@ if __name__ == "__main__":
                 else:
                     action, _ = get_action(q_net, obs, mask)
                 obs_, reward, done, trunc, info_ = env.step(action)
+
+                # Normalize reward
+                reward = (reward - cfg.norm_min) / (cfg.norm_max - cfg.norm_min)
+
                 next_obs = process_obs(obs_)
                 next_mask = process_act_masks(obs_)
                 buffer.insert_step(
@@ -487,11 +493,14 @@ if __name__ == "__main__":
                 with torch.no_grad():
                     reward_total = 0.0
                     pred_reward_total = 0.0
+                    max_reward_total = -float("inf")
+                    min_reward_total = float("inf")
                     obs_, _ = test_env.reset()
                     eval_obs = process_obs(obs_)
                     eval_mask = process_act_masks(obs_)
                     for _ in range(cfg.eval_steps):
                         steps_taken = 0
+                        episode_reward = 0.0
                         for _ in range(cfg.max_eval_steps):
                             action, q_val = get_action(q_net, eval_obs, eval_mask)
                             pred_reward_total += q_val
@@ -500,14 +509,19 @@ if __name__ == "__main__":
                             eval_mask = process_act_masks(obs_)
                             steps_taken += 1
                             reward_total += reward
+                            episode_reward += 1
                             if done or trunc:
                                 obs_, info = test_env.reset()
                                 eval_obs = process_obs(obs_)
                                 eval_mask = process_act_masks(obs_)
                                 break
+                        max_reward_total = max(episode_reward, max_reward_total)
+                        min_reward_total = min(episode_reward, min_reward_total)
                 log_dict.update(
                     {
                         "avg_eval_episode_reward": reward_total / cfg.eval_steps,
+                        "eval_max_reward": max_reward_total,
+                        "eval_min_reward": min_reward_total,
                         "avg_eval_episode_predicted_reward": pred_reward_total
                         / cfg.eval_steps,
                     }
