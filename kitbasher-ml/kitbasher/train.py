@@ -416,6 +416,7 @@ if __name__ == "__main__":
         obs_space.node_space.shape[0],
         64,
         cfg.process_type,
+        tanh_logit=cfg.tanh_logit,
     )
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
