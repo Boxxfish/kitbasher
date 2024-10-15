@@ -38,6 +38,7 @@ class Config:
     max_actions_per_step: int = 100
     prompt: str = "a lego "
     checkpoint: str = ""
+    use_mirror: bool = False
     device: str = "cuda"
 
 
@@ -75,6 +76,7 @@ if __name__ == "__main__":
         max_steps=cfg.max_steps,
         visualize=True,
         prompts=prompts,
+        use_mirror=cfg.use_mirror,
     )
 
     # Initialize Q network

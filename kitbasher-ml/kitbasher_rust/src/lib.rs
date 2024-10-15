@@ -1,3 +1,4 @@
+use core::f32;
 use std::{cell::RefCell, rc::Rc};
 
 use bevy::math::{Quat, Vec3};
@@ -438,7 +439,6 @@ impl Renderer {
             .into();
         let mut root = window.add_group();
         let mut mirrored_root = window.add_group();
-        mirrored_root.set_local_scale(-1., 1., 1.);
         for placed in &model {
             let color = self.part_models[placed.part_id].1;
             let part_model = part_models[placed.part_id].clone();
@@ -457,24 +457,27 @@ impl Renderer {
                     placed.rotation.z,
                 )),
             );
-            let mut c1 = root.add_mesh(part_model, Vector3::new(1., 1., 1.));
+            let mut c1 = root.add_mesh(part_model.clone(), Vector3::new(1., 1., 1.));
             c1.set_color(color.x, color.y, color.z);
             c1.prepend_to_local_transformation(&part_xform);
 
-            let mut c2 = root.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
+            let mut c2 = root.add_mesh(part_model_outline.clone(), Vector3::new(1.05, 1.05, 1.05));
             c2.set_color(0., 0., 0.);
             c2.enable_backface_culling(true);
             c2.prepend_to_local_transformation(&part_xform);
 
             if self.use_mirror {
-                let mut c1 = mirrored_root.add_mesh(part_model, Vector3::new(1., 1., 1.));
+                let mut c1 = mirrored_root.add_mesh(part_model, Vector3::new(-1., 1., 1.));
                 c1.set_color(color.x, color.y, color.z);
-                c1.prepend_to_local_transformation(&part_xform);
+                let mut mirrored_xform = part_xform;
+                mirrored_xform.translation.x = -mirrored_xform.translation.x;
+                c1.set_local_transformation(mirrored_xform);
+                c1.enable_backface_culling(false);
 
-                let mut c2 = mirrored_root.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
-                c2.set_color(0., 0., 0.);
-                c2.enable_backface_culling(true);
-                c2.prepend_to_local_transformation(&part_xform);
+                // let mut c2 = mirrored_root.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
+                // c2.set_color(0., 0., 0.);
+                // c2.enable_backface_culling(true);
+                // c2.prepend_to_local_transformation(&part_xform);
             }
 
             // Update model bbox

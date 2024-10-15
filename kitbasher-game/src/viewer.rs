@@ -64,7 +64,7 @@ fn setup_parts(mut commands: Commands, asset_server: Res<AssetServer>) {
         ));
     }
     commands.insert_resource(PartModels(part_models));
-    commands.insert_resource(KBEngineWrapper(KBEngine::new(&[], &[[0, 0], [1, 2]])));
+    commands.insert_resource(KBEngineWrapper(KBEngine::new(&[], &[[0, 0], [1, 2]], false)));
     commands.spawn((ModelRoot, SpatialBundle::default()));
 }
 
