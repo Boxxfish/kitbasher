@@ -80,6 +80,8 @@ class Config(BaseModel):
     process_layers: int = 2  # The number of layers in the process step.
     tanh_logit: bool = False # Whether we should apply the tanh activation function on the q value.
     eval_every: int = 100
+    norm_min: float = 0.7
+    norm_max: float = 1.2
     out_dir: str = "runs"
     single_class: str = ""
     device: str = "cuda"
@@ -447,6 +449,10 @@ if __name__ == "__main__":
                 else:
                     action, _ = get_action(q_net, obs, mask)
                 obs_, reward, done, trunc, info_ = env.step(action)
+
+                # Normalize reward
+                reward = (reward - cfg.norm_min) / (cfg.norm_max - cfg.norm_min)
+
                 next_obs = process_obs(obs_)
                 next_mask = process_act_masks(obs_)
                 buffer.insert_step(
