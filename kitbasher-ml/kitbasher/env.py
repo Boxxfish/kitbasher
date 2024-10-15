@@ -181,6 +181,7 @@ class ConstructionEnv(gym.Env):
         nodes = []
         edges = set()
         for j, config in enumerate(self.model + self.place_configs):
+            is_action = j >= len(self.place_configs)
             part_ids.append(config.part_id)
             min_bbox, max_bbox = merge_bboxes(config.bboxes)
             node_vec = torch.zeros([NODE_DIM])
@@ -195,7 +196,7 @@ class ConstructionEnv(gym.Env):
             node_vec[rot_start + 1] = config.rotation.y
             node_vec[rot_start + 2] = config.rotation.z
             node_vec[rot_start + 3] = config.rotation.w
-            node_vec[rot_start + 4] = int(j >= len(self.place_configs))
+            node_vec[rot_start + 4] = int(is_action)
             conn_start_all = rot_start + 4 + 1
             for i in range(MAX_CONNECTIONS):
                 if i < len(config.connectors):
@@ -210,7 +211,8 @@ class ConstructionEnv(gym.Env):
                     node_vec[conn_start + 9] = int(connector.side_a)
                     node_vec[conn_start + 10] = int(connection is not None)
                     if connection is not None:
-                        edges.add((j, connection.placed_id))
+                        if not is_action:
+                            edges.add((j, connection.placed_id))
                         edges.add((connection.placed_id, j))
             nodes.append(torch.cat([label_one_hot, node_vec], 0))
         x = torch.stack(nodes)
