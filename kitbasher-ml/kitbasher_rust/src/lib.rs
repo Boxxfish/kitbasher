@@ -1,15 +1,9 @@
-use core::f32;
 use std::{cell::RefCell, rc::Rc};
 
 use bevy::math::{Quat, Vec3};
-use kiss3d::{
-    camera::{Camera, FirstPerson},
-    nalgebra::{self, Quaternion, UnitQuaternion, Vector3},
-    resource::Mesh,
-    window::Window,
-};
 use kitbasher_game::engine::{Axis, Connection, Connector, KBEngine, PlacedConfig, AABB};
 use pyo3::prelude::*;
+use three_d::*;
 
 #[pyclass]
 #[derive(Debug, Copy, Clone)]
@@ -307,8 +301,8 @@ impl EngineWrapper {
 
 #[pyclass]
 struct Renderer {
-    part_models: Vec<(kiss3d::resource::Mesh, Vec3)>,
-    part_model_outlines: Vec<kiss3d::resource::Mesh>,
+    part_models: Vec<(CpuMesh, Vec3)>,
+    part_model_outlines: Vec<CpuMesh>,
     use_mirror: bool,
 }
 
@@ -326,10 +320,14 @@ impl Renderer {
                         continue;
                     }
                     if let Some(mesh) = node.mesh() {
-                        let xform = nalgebra::Matrix4::from_column_slice(
-                            node.transform().matrix().as_slice().as_flattened(),
+                        let cols = node.transform().matrix().as_slice();
+                        let xform = Matrix4::from_cols(
+                            cols[0].into(),
+                            cols[1].into(),
+                            cols[2].into(),
+                            cols[3].into(),
                         );
-                        let norm_xform = xform.try_inverse().unwrap().transpose();
+                        // let norm_xform = xform.try_inverse().unwrap().transpose();
                         for prim in mesh.primitives() {
                             let reader = prim.reader(|buffer| {
                                 buffers.get(buffer.index()).map(|data| &data.0[..])
@@ -340,7 +338,7 @@ impl Renderer {
                             let positions: Vec<_> = reader
                                 .read_positions()
                                 .unwrap()
-                                .map(|x| xform.transform_point(&nalgebra::Point3::from(x)))
+                                .map(|x| xform.transform_point(x.into()))
                                 .collect();
                             // let normals = reader
                             //     .read_normals()
@@ -352,24 +350,32 @@ impl Renderer {
                                 .unwrap()
                                 .into_u32()
                                 .map(|x| x as u16)
-                                .collect::<Vec<_>>()
-                                .chunks_exact(3)
-                                .map(|x| kiss3d::nalgebra::Point3::new(x[0], x[1], x[2]))
-                                .collect();
-                            let part_mesh = kiss3d::resource::Mesh::new(
-                                positions.clone(),
-                                indices.clone(),
-                                None,
-                                None,
-                                false,
-                            );
-                            let part_mesh_outline = kiss3d::resource::Mesh::new(
-                                positions,
-                                indices.iter().map(|x| x.yxz()).collect(),
-                                None,
-                                None,
-                                false,
-                            );
+                                .collect::<Vec<_>>();
+                                // .chunks_exact(3)
+                                // .map(|x| x.to_vec())
+                                // .collect();
+                            let part_mesh = CpuMesh {
+                                positions: Positions::F32(positions),
+                                indices: Indices::U16(indices),
+                                colors: None,
+                                normals: None,
+                                tangents: None,
+                                uvs: None,
+                            };
+                            // let part_mesh = kiss3d::resource::Mesh::new(
+                            //     positions.clone(),
+                            //     indices.clone(),
+                            //     None,
+                            //     None,
+                            //     false,
+                            // );
+                            // let part_mesh_outline = kiss3d::resource::Mesh::new(
+                            //     positions,
+                            //     indices.iter().map(|x| x.yxz()).collect(),
+                            //     None,
+                            //     None,
+                            //     false,
+                            // );
                             part_models.push((part_mesh, color));
                             part_model_outlines.push(part_mesh_outline);
                         }
