@@ -180,7 +180,7 @@ class ConstructionEnv(gym.Env):
         nodes = []
         edges = set()
         for j, config in enumerate(self.model + self.place_configs):
-            is_action = j >= len(self.place_configs)
+            is_action = j >= len(self.model)
             part_ids.append(config.part_id)
             min_bbox, max_bbox = merge_bboxes(config.bboxes)
             node_vec = torch.zeros([NODE_DIM])
