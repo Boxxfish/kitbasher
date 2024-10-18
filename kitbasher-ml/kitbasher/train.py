@@ -78,10 +78,13 @@ class Config(BaseModel):
     )
     prompt: str = "a lego "
     process_layers: int = 2  # The number of layers in the process step.
-    tanh_logit: bool = False # Whether we should apply the tanh activation function on the q value.
+    tanh_logit: bool = (
+        False  # Whether we should apply the tanh activation function on the q value.
+    )
     eval_every: int = 100
     norm_min: float = 0.7
     norm_max: float = 1.2
+    no_advantage: bool = False
     out_dir: str = "runs"
     single_class: str = ""
     device: str = "cuda"
@@ -114,6 +117,7 @@ class QNet(nn.Module):
         hidden_dim: int,
         process_type: str,
         tanh_logit: bool,
+        no_advantage: bool,
     ):
         nn.Module.__init__(self)
         assert process_type in ["deep_set", "gcn", "self_attn", "independent"]
@@ -155,9 +159,12 @@ class QNet(nn.Module):
             nn.Linear(hidden_dim, 1),
         )
         self.mean_aggr = aggr.MeanAggregation()
-        self.value = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1)
-        )
+        
+        self.use_advantage = not no_advantage
+        if self.use_advantage:
+            self.value = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1)
+            )
         self.tanh_logit = tanh_logit
 
     def forward(self, data: Data):
@@ -178,14 +185,21 @@ class QNet(nn.Module):
         x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
         x = self.process(x, edge_index, batch)  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
-        advantage_mean = self.mean_aggr(advantage, batch)  # Shape: (num_batches, 1)
-        advantage_mean = torch.gather(
-            advantage_mean, 0, batch.unsqueeze(1)
-        )  # Shape: (num_nodes, 1)
-        value_x = self.mean_aggr(x, batch)  # Shape: (num_batches, hidden_dim)
-        value = self.value(value_x)  # Shape: (num_batches, 1)
-        value = torch.gather(value, 0, batch.unsqueeze(1))  # Shape: (num_nodes, 1)
-        q_val = value + advantage - advantage_mean
+        
+        # If advantages are enabled, q values are a combination of value + advantage
+        if self.use_advantage:
+            advantage_mean = self.mean_aggr(advantage, batch)  # Shape: (num_batches, 1)
+            advantage_mean = torch.gather(
+                advantage_mean, 0, batch.unsqueeze(1)
+            )  # Shape: (num_nodes, 1)
+            value_x = self.mean_aggr(x, batch)  # Shape: (num_batches, hidden_dim)
+            value = self.value(value_x)  # Shape: (num_batches, 1)
+            value = torch.gather(value, 0, batch.unsqueeze(1))  # Shape: (num_nodes, 1)
+            q_val = value + advantage - advantage_mean
+        # If advantages are disabled, the advantages directly become values
+        else:
+            q_val = advantage
+        
         if self.tanh_logit:
             q_val = torch.tanh(q_val)
         return q_val
