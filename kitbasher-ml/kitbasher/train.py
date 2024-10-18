@@ -159,7 +159,7 @@ class QNet(nn.Module):
             nn.Linear(hidden_dim, 1),
         )
         self.mean_aggr = aggr.MeanAggregation()
-        
+
         self.use_advantage = not no_advantage
         if self.use_advantage:
             self.value = nn.Sequential(
@@ -185,7 +185,7 @@ class QNet(nn.Module):
         x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
         x = self.process(x, edge_index, batch)  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
-        
+
         # If advantages are enabled, q values are a combination of value + advantage
         if self.use_advantage:
             advantage_mean = self.mean_aggr(advantage, batch)  # Shape: (num_batches, 1)
@@ -199,7 +199,7 @@ class QNet(nn.Module):
         # If advantages are disabled, the advantages directly become values
         else:
             q_val = advantage
-        
+
         if self.tanh_logit:
             q_val = torch.tanh(q_val)
         return q_val
@@ -433,6 +433,7 @@ if __name__ == "__main__":
         64,
         cfg.process_type,
         tanh_logit=cfg.tanh_logit,
+        no_advantage=cfg.no_advantage,
     )
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
