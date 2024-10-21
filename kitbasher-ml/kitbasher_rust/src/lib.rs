@@ -302,7 +302,6 @@ impl EngineWrapper {
 #[pyclass]
 struct Renderer {
     part_models: Vec<(CpuMesh, CpuMaterial)>,
-    part_model_outlines: Vec<CpuMesh>,
     use_mirror: bool,
 }
 
@@ -311,7 +310,6 @@ impl Renderer {
     #[new]
     pub fn new(part_paths: Vec<String>, use_mirror: bool) -> Self {
         let mut part_models = Vec::new();
-        let mut part_model_outlines = Vec::new();
         for path in &part_paths {
             let (document, buffers, _) = gltf::import(path).unwrap();
             for scene in document.scenes() {
@@ -341,21 +339,13 @@ impl Renderer {
                                 .unwrap()
                                 .map(|x| xform.transform_point(x.into()).to_vec())
                                 .collect();
-                            // let normals = reader
-                            //     .read_normals()
-                            //     .unwrap()
-                            //     .map(|x| norm_xform.transform_vector(&nalgebra::Point3::from(x)))
-                            //     .collect();
                             let indices: Vec<_> = reader
                                 .read_indices()
                                 .unwrap()
                                 .into_u32()
                                 .map(|x| x as u16)
                                 .collect::<Vec<_>>();
-                            // .chunks_exact(3)
-                            // .map(|x| x.to_vec())
-                            // .collect();
-                            let part_mesh = CpuMesh {
+                            let mut part_mesh = CpuMesh {
                                 positions: Positions::F32(positions.clone()),
                                 indices: Indices::U16(indices.clone()),
                                 colors: None,
@@ -363,33 +353,8 @@ impl Renderer {
                                 tangents: None,
                                 uvs: None,
                             };
-                            // let part_mesh = kiss3d::resource::Mesh::new(
-                            //     positions.clone(),
-                            //     indices.clone(),
-                            //     None,
-                            //     None,
-                            //     false,
-                            // );
-                            let part_mesh_outline = CpuMesh {
-                                positions: Positions::F32(positions),
-                                indices: Indices::U16(
-                                    indices
-                                        .chunks_exact(3)
-                                        .flat_map(|x| [x[1], x[0], x[2]])
-                                        .collect::<Vec<_>>(),
-                                ),
-                                colors: None,
-                                normals: None,
-                                tangents: None,
-                                uvs: None,
-                            };
-                            // let part_mesh_outline = kiss3d::resource::Mesh::new(
-                            //     positions,
-                            //     indices.iter().map(|x| x.yxz()).collect(),
-                            //     None,
-                            //     None,
-                            //     false,
-                            // );
+                            part_mesh.compute_normals();
+
                             part_models.push((
                                 part_mesh,
                                 CpuMaterial {
@@ -402,7 +367,6 @@ impl Renderer {
                                     ..Default::default()
                                 },
                             ));
-                            part_model_outlines.push(part_mesh_outline);
                         }
                     }
                 }
@@ -411,7 +375,6 @@ impl Renderer {
 
         Self {
             part_models,
-            part_model_outlines,
             use_mirror,
         }
     }
@@ -420,6 +383,12 @@ impl Renderer {
     pub fn render_model(&self, model: Vec<PyPlacedConfig>) -> (Vec<u8>, Vec<u8>) {
         let viewport = Viewport::new_at_origo(512, 512);
         let context = HeadlessContext::new().unwrap();
+        // let window = Window::new(WindowSettings {
+        //     max_size: Some((512, 512)),
+        //     ..Default::default()
+        // })
+        // .unwrap();
+        // let context = window.gl();
         let mut render_tex = Texture2D::new_empty::<[u8; 4]>(
             &context,
             viewport.width,
@@ -437,45 +406,6 @@ impl Renderer {
             Wrapping::ClampToEdge,
             Wrapping::ClampToEdge,
         );
-
-        // let part_models: Vec<_> = self
-        //     .part_models
-        //     .iter()
-        //     .map(|(mesh, _)| {
-        //         Rc::new(RefCell::new(Mesh::new(
-        //             mesh.coords()
-        //                 .read()
-        //                 .unwrap()
-        //                 .data()
-        //                 .as_ref()
-        //                 .unwrap()
-        //                 .clone(),
-        //             mesh.faces()
-        //                 .read()
-        //                 .unwrap()
-        //                 .data()
-        //                 .as_ref()
-        //                 .unwrap()
-        //                 .clone(),
-        //             mesh.normals().read().unwrap().data().clone(),
-        //             mesh.uvs().read().unwrap().data().clone(),
-        //             false,
-        //         )))
-        //     })
-        //     .collect();
-        // let part_model_outlines: Vec<_> = self
-        //     .part_model_outlines
-        //     .iter()
-        //     .map(|m| {
-        //         Rc::new(RefCell::new(Mesh::new(
-        //             m.coords().read().unwrap().data().as_ref().unwrap().clone(),
-        //             m.faces().read().unwrap().data().as_ref().unwrap().clone(),
-        //             m.normals().read().unwrap().data().clone(),
-        //             m.uvs().read().unwrap().data().clone(),
-        //             false,
-        //         )))
-        //     })
-        //     .collect();
         let mut model_bbox: AABB = model[0]
             .bboxes
             .iter()
@@ -483,15 +413,17 @@ impl Renderer {
             .reduce(|a, b| AABB::from(a).union(&b.into()).into())
             .unwrap()
             .into();
-        let mut mirrored_xform = Matrix4::from_nonuniform_scale(-1., 1., 1.);
         let mut models = Vec::new();
+        let outline_material = CpuMaterial {
+            albedo: Srgba::new(0, 0, 0, 255),
+            ..Default::default()
+        };
         for placed in &model {
-            let (part_model, material) = &self.part_models[placed.part_id].clone();
-            // let part_model_outline = self.part_model_outlines[placed.part_id].clone();
+            let (part_model, material) = &self.part_models[placed.part_id];
             // Render both original part and outline
             let part_xform = Matrix4::from_translation(Vector3::new(
                 placed.position.x,
-                placed.position.y,
+                -placed.position.y,
                 placed.position.z,
             )) * Matrix4::from(Quaternion::new(
                 placed.rotation.z,
@@ -500,31 +432,65 @@ impl Renderer {
                 placed.rotation.y,
             ));
 
+            // Part model
             let mut model = Gm::new(
                 Mesh::new(&context, part_model),
-                ColorMaterial::new_opaque(&context, material),
+                PhysicalMaterial::new_opaque(&context, material),
             );
             model.set_transformation(part_xform);
             models.push(model);
 
-            // let mut c2 = root.add_mesh(part_model_outline.clone(), Vector3::new(1.05, 1.05, 1.05));
-            // c2.set_color(0., 0., 0.);
-            // c2.enable_backface_culling(true);
-            // c2.prepend_to_local_transformation(&part_xform);
+            // Outline
+            let mut outline_mat = PhysicalMaterial::new_opaque(&context, &outline_material);
+            outline_mat.render_states.cull = Cull::Front;
+            let mut model = Gm::new(Mesh::new(&context, part_model), outline_mat);
+            model.set_transformation(part_xform * Matrix4::from_scale(1.1));
+            models.push(model);
 
-            // if self.use_mirror {
-            //     let mut c1 = mirrored_root.add_mesh(part_model, Vector3::new(-1., 1., 1.));
-            //     c1.set_color(color.x, color.y, color.z);
-            //     let mut mirrored_xform = part_xform;
-            //     mirrored_xform.translation.x = -mirrored_xform.translation.x;
-            //     c1.set_local_transformation(mirrored_xform);
-            //     c1.enable_backface_culling(false);
+            // Render a flipped version of the part if mirroring
+            if self.use_mirror {
+                let mirrored_xform = Matrix4::from_nonuniform_scale(-1., 1., 1.) * part_xform;
+                let mut model = Gm::new(
+                    Mesh::new(&context, part_model),
+                    PhysicalMaterial::new_opaque(&context, material),
+                );
+                model.material.render_states.cull = Cull::None;
+                model.update_positions(
+                    &part_model
+                        .positions
+                        .to_f32()
+                        .iter()
+                        .map(|p| {
+                            mirrored_xform
+                                .transform_point(Point3::from_vec(*p))
+                                .to_vec()
+                        })
+                        .collect::<Vec<_>>(),
+                );
+                model.update_normals(
+                    &part_model
+                        .normals
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .map(|n| {
+                            -mirrored_xform
+                                .invert()
+                                .unwrap()
+                                .transpose()
+                                .transform_vector(*n)
+                                .normalize()
+                        })
+                        .collect::<Vec<_>>(),
+                );
+                models.push(model);
 
-            //     // let mut c2 = mirrored_root.add_mesh(part_model_outline, Vector3::new(1.05, 1.05, 1.05));
-            //     // c2.set_color(0., 0., 0.);
-            //     // c2.enable_backface_culling(true);
-            //     // c2.prepend_to_local_transformation(&part_xform);
-            // }
+                let mut outline_mat = PhysicalMaterial::new_opaque(&context, &outline_material);
+                outline_mat.render_states.cull = Cull::Back;
+                let mut model = Gm::new(Mesh::new(&context, part_model), outline_mat);
+                model.set_transformation(mirrored_xform * Matrix4::from_scale(1.1));
+                models.push(model);
+            }
 
             // Update model bbox
             model_bbox = model_bbox.union(
@@ -544,35 +510,31 @@ impl Renderer {
         let at = model_center;
 
         // Render both front and back
-        let eye = vec3(100., 50., 100.) + model_center;
-        let camera = Camera::new_perspective(
-            viewport,
-            eye,
-            at,
-            Vector3::unit_y(),
-            degrees(60.0),
-            0.1,
-            1000.0,
-        );
+        let mut buffers = Vec::new();
+        for offset in [vec3(100., -50., 100.), vec3(-100., -50., 100.)] {
+            let eye = offset / 2. + model_center;
+            let directional = DirectionalLight::new(&context, 2.0, Srgba::WHITE, &(at - eye));
+            let camera = Camera::new_perspective(
+                viewport,
+                eye,
+                at,
+                Vector3::unit_y(),
+                degrees(60.0),
+                0.1,
+                1000.0,
+            );
 
-        let buffer1 = RenderTarget::new(
-            render_tex.as_color_target(None),
-            depth_tex.as_depth_target(),
-        )
-        .clear(ClearState::color_and_depth(1., 1., 1., 1., 1.))
-        .render(&camera, &models, &[])
-        .read_color::<[u8; 4]>();
+            let buffer = RenderTarget::new(
+                render_tex.as_color_target(None),
+                depth_tex.as_depth_target(),
+            )
+            .clear(ClearState::color_and_depth(1., 1., 1., 1., 1.))
+            .render(&camera, &models, &[&directional])
+            .read_color::<[u8; 4]>();
+            buffers.push(buffer.into_flattened());
+        }
 
-        // let eye = nalgebra::Vector3::new(-100., 50., -100.) + model_center;
-        // let mut fp = FirstPerson::new(eye.into(), at.into());
-        // fp.set_up_axis(-nalgebra::Vector3::y());
-        // window.render_with_camera(&mut fp);
-        // window.render_with_camera(&mut fp);
-
-        let mut buffer2 = Vec::new();
-        // window.snap(&mut buffer2);
-
-        (buffer1.into_flattened(), buffer2)
+        (buffers[0].clone(), buffers[1].clone())
     }
 }
 

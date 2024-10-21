@@ -118,9 +118,10 @@ if __name__ == "__main__":
             )
 
             # Show model scoring screenshot
-            plt.imshow(env.screenshot()[0])
+            screenshots = env.screenshot()
+            plt.imshow(screenshots[0])
             plt.show()
-            plt.imshow(env.screenshot()[1])
+            plt.imshow(screenshots[1])
             plt.show()
             print(reward)
 
