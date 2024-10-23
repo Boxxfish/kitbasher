@@ -59,7 +59,7 @@ class PartModel:
             ),
         )
 
-RENDERER = None
+renderer = None
 
 class ConstructionEnv(gym.Env):
     def __init__(
@@ -75,6 +75,7 @@ class ConstructionEnv(gym.Env):
         visualize: bool = False,
         prompts: List[str] = ["test"],
     ) -> None:
+        global renderer
         self.num_parts = len(BLOCK_PARTS)
         self.engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES, use_mirror)
         self.model: List[PyPlacedConfig] = []
@@ -92,11 +93,11 @@ class ConstructionEnv(gym.Env):
         self.last_score = 0.0
         self.prompt = ""
         self.prompts = prompts
-        if not RENDERER:
-            RENDERER = Renderer(
+        if not renderer:
+            renderer = Renderer(
                 [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], use_mirror
             )
-        self.renderer = RENDERER
+        self.renderer = renderer
         self.label_idx = 0
         if visualize:
             rr.init("Construction")
