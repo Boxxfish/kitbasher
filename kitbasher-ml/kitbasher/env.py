@@ -96,7 +96,7 @@ class ConstructionEnv(gym.Env):
             RENDERER = Renderer(
                 [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], use_mirror
             )
-            self.renderer = RENDERER
+        self.renderer = RENDERER
         self.label_idx = 0
         if visualize:
             rr.init("Construction")
