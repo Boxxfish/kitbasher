@@ -4,6 +4,7 @@ use bevy::math::{Quat, Vec3};
 use kitbasher_game::engine::{Axis, Connection, Connector, KBEngine, PlacedConfig, AABB};
 use pyo3::prelude::*;
 use three_d::*;
+use winit::platform::{run_return::EventLoopExtRunReturn, wayland::EventLoopBuilderExtWayland};
 
 #[pyclass]
 #[derive(Debug, Copy, Clone)]
@@ -383,12 +384,16 @@ impl Renderer {
     pub fn render_model(&self, model: Vec<PyPlacedConfig>) -> (Vec<u8>, Vec<u8>) {
         let viewport = Viewport::new_at_origo(512, 512);
         let context = HeadlessContext::new().unwrap();
-        // let window = Window::new(WindowSettings {
-        //     max_size: Some((512, 512)),
-        //     ..Default::default()
-        // })
+        // let event_loop = winit::event_loop::EventLoopBuilder::new().build();
+        // let window = Window::from_event_loop(
+        //     WindowSettings {
+        //         max_size: Some((512, 512)),
+        //         ..Default::default()
+        //     },
+        //     &event_loop,
+        // )
         // .unwrap();
-        // let context = window.gl();
+        // let context = W;
         let mut render_tex = Texture2D::new_empty::<[u8; 4]>(
             &context,
             viewport.width,

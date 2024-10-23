@@ -2731,6 +2731,7 @@ dependencies = [
  "rand",
  "ron",
  "three-d",
+ "winit 0.28.7",
 ]
 
 [[package]]
