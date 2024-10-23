@@ -59,6 +59,7 @@ class PartModel:
             ),
         )
 
+RENDERER = None
 
 class ConstructionEnv(gym.Env):
     def __init__(
@@ -91,9 +92,11 @@ class ConstructionEnv(gym.Env):
         self.last_score = 0.0
         self.prompt = ""
         self.prompts = prompts
-        self.renderer = Renderer(
-            [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], use_mirror
-        )
+        if not RENDERER:
+            RENDERER = Renderer(
+                [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], use_mirror
+            )
+            self.renderer = RENDERER
         self.label_idx = 0
         if visualize:
             rr.init("Construction")
