@@ -300,10 +300,11 @@ impl EngineWrapper {
     }
 }
 
-#[pyclass]
+#[pyclass(unsendable)]
 struct Renderer {
     part_models: Vec<(CpuMesh, CpuMaterial)>,
     use_mirror: bool,
+    event_loop: winit::event_loop::EventLoop<()>,
 }
 
 #[pymethods]
@@ -373,27 +374,25 @@ impl Renderer {
                 }
             }
         }
+        
+        let event_loop = winit::event_loop::EventLoopBuilder::new().build();
 
         Self {
             part_models,
             use_mirror,
+            event_loop,
         }
     }
 
     /// Renders the model to an image and returns a byte array.
-    pub fn render_model(&self, model: Vec<PyPlacedConfig>) -> (Vec<u8>, Vec<u8>) {
+    pub fn render_model(&mut self, model: Vec<PyPlacedConfig>) -> (Vec<u8>, Vec<u8>) {
         let viewport = Viewport::new_at_origo(512, 512);
-        let context = HeadlessContext::new().unwrap();
-        // let event_loop = winit::event_loop::EventLoopBuilder::new().build();
-        // let window = Window::from_event_loop(
-        //     WindowSettings {
-        //         max_size: Some((512, 512)),
-        //         ..Default::default()
-        //     },
-        //     &event_loop,
-        // )
-        // .unwrap();
-        // let context = W;
+        // let context = HeadlessContext::new().unwrap();
+        let window = winit::window::WindowBuilder::new()
+            .build(&self.event_loop)
+            .unwrap();
+        let context =
+            WindowedContext::from_winit_window(&window, SurfaceSettings::default()).unwrap();
         let mut render_tex = Texture2D::new_empty::<[u8; 4]>(
             &context,
             viewport.width,
@@ -429,7 +428,7 @@ impl Renderer {
             let part_xform = Matrix4::from_translation(Vector3::new(
                 placed.position.x,
                 -placed.position.y,
-                placed.position.z,
+                -placed.position.z,
             )) * Matrix4::from(Quaternion::new(
                 placed.rotation.z,
                 placed.rotation.w,
@@ -511,12 +510,13 @@ impl Renderer {
             );
         }
 
-        let model_center = Vector3::from(model_bbox.center.to_array());
+        let mut model_center = Vector3::from(model_bbox.center.to_array());
+        model_center.y = -model_center.y;
         let at = model_center;
 
         // Render both front and back
         let mut buffers = Vec::new();
-        for offset in [vec3(100., -50., 100.), vec3(-100., -50., 100.)] {
+        for offset in [vec3(80., -50., 100.), vec3(-100., -50., 80.)] {
             let eye = offset / 2. + model_center;
             let directional = DirectionalLight::new(&context, 2.0, Srgba::WHITE, &(at - eye));
             let camera = Camera::new_perspective(
@@ -524,7 +524,7 @@ impl Renderer {
                 eye,
                 at,
                 Vector3::unit_y(),
-                degrees(60.0),
+                degrees(90.0),
                 0.1,
                 1000.0,
             );
