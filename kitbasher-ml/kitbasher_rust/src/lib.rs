@@ -516,15 +516,15 @@ impl Renderer {
 
         // Render both front and back
         let mut buffers = Vec::new();
-        for offset in [vec3(80., -50., 100.), vec3(-100., -50., 80.)] {
-            let eye = offset / 2. + model_center;
+        for offset in [vec3(80., -50., 100.), vec3(-100., -50., -80.)] {
+            let eye = offset + model_center;
             let directional = DirectionalLight::new(&context, 2.0, Srgba::WHITE, &(at - eye));
             let camera = Camera::new_perspective(
                 viewport,
                 eye,
                 at,
                 Vector3::unit_y(),
-                degrees(90.0),
+                degrees(60.0),
                 0.1,
                 1000.0,
             );
