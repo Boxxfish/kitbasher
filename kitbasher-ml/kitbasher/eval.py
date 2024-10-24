@@ -97,6 +97,7 @@ if __name__ == "__main__":
             64,
             train_cfg.process_type,
             train_cfg.tanh_logit,
+            train_cfg.no_advantage,
         )
         load_model(q_net, cfg.checkpoint)
     with torch.no_grad():
