@@ -86,6 +86,7 @@ class Config(BaseModel):
     norm_max: float = 1.2
     no_advantage: bool = False
     out_dir: str = "runs"
+    use_mirror: bool = False
     single_class: str = ""
     device: str = "cuda"
 
@@ -409,6 +410,7 @@ if __name__ == "__main__":
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
         prompts=prompts,
+        use_mirror=cfg.use_mirror,
     )
     test_env = ConstructionEnv(
         score_fn=score_fn,
@@ -417,6 +419,7 @@ if __name__ == "__main__":
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
         prompts=prompts,
+        use_mirror=cfg.use_mirror,
     )
 
     # Initialize Q network

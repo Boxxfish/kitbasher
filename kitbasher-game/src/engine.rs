@@ -9,15 +9,17 @@ pub struct KBEngine {
     parts: Vec<PartData>,
     connect_rules: Vec<[usize; 2]>,
     model: Vec<PlacedConfig>,
+    use_mirror: bool,
 }
 
 impl KBEngine {
     /// Creates a new instance of the engine.
-    pub fn new(parts: &[PartData], connect_rules: &[[usize; 2]]) -> Self {
+    pub fn new(parts: &[PartData], connect_rules: &[[usize; 2]], use_mirror: bool) -> Self {
         Self {
             parts: parts.into(),
             connect_rules: connect_rules.into(),
             model: Vec::new(),
+            use_mirror,
         }
     }
 
@@ -150,6 +152,7 @@ impl KBEngine {
             invar_y: part.invar_y,
             invar_z: part.invar_z,
         };
+
         // Check if part can be attached to existing parts
         for (placed_id, placed) in self.model.iter().enumerate() {
             for (placed_connector_id, placed_connector) in placed.connectors.iter().enumerate() {
@@ -211,6 +214,21 @@ impl KBEngine {
                     }
                 }
             }
+        }
+
+        // If mirroring is enabled and a configuration crosses the x axis, remove it
+        if self.use_mirror {
+            configs.retain(|config| {
+                let mut crossed = false;
+                for bbox in &config.bboxes {
+                    let x = bbox.center.x + config.position.x - bbox.half_sizes.x;
+                    if x < -0.001 {
+                        crossed = true;
+                        break;
+                    }
+                }
+                !crossed
+            });
         }
 
         // If any configurations share the same position and rotation, merge them
@@ -372,7 +390,7 @@ mod tests {
             invar_y: Some(1),
             invar_z: None,
         }];
-        let mut engine = KBEngine::new(&parts, &[[0, 0]]);
+        let mut engine = KBEngine::new(&parts, &[[0, 0]], false);
         engine.place_part(&PlacedConfig {
             position: Vec3::ZERO,
             part_id: 0,
@@ -448,7 +466,7 @@ mod tests {
             invar_y: Some(1),
             invar_z: None,
         }];
-        let mut engine = KBEngine::new(&parts, &[[0, 0]]);
+        let mut engine = KBEngine::new(&parts, &[[0, 0]], false);
         engine.place_part(&PlacedConfig {
             position: Vec3::ZERO,
             part_id: 0,

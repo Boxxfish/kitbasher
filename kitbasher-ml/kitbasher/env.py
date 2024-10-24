@@ -59,6 +59,7 @@ class PartModel:
             ),
         )
 
+renderer = None
 
 class ConstructionEnv(gym.Env):
     def __init__(
@@ -69,12 +70,14 @@ class ConstructionEnv(gym.Env):
         start_fn: Callable[[EngineWrapper], None],
         use_potential: bool,
         max_actions_per_step: int,
+        use_mirror: bool,
         max_steps: Optional[int] = None,
         visualize: bool = False,
         prompts: List[str] = ["test"],
     ) -> None:
+        global renderer
         self.num_parts = len(BLOCK_PARTS)
-        self.engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES)
+        self.engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES, use_mirror)
         self.model: List[PyPlacedConfig] = []
         self.place_configs: List[PyPlacedConfig] = []
         self.timer = 0
@@ -90,9 +93,11 @@ class ConstructionEnv(gym.Env):
         self.last_score = 0.0
         self.prompt = ""
         self.prompts = prompts
-        self.renderer = Renderer(
-            [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS]
-        )
+        if not renderer:
+            renderer = Renderer(
+                [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], use_mirror
+            )
+        self.renderer = renderer
         self.label_idx = 0
         if visualize:
             rr.init("Construction")
@@ -140,7 +145,7 @@ class ConstructionEnv(gym.Env):
             rotations[placed.part_id].append([rot.x, rot.y, rot.z, rot.w])
         for i, model in enumerate(self.models):
             model.render(translations[i], rotations[i])
- 
+
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
     ) -> tuple[Data, dict[str, Any]]:
@@ -160,7 +165,7 @@ class ConstructionEnv(gym.Env):
         """
         buffers = self.renderer.render_model(self.model)
         return tuple(
-                np.array(b).reshape([512, 512, 3])[:, ::-1, :] / 255 for b in buffers
+            np.array(b).reshape([512, 512, 4])[::-1, :, :3] / 255 for b in buffers
         )
 
     def gen_obs(self) -> Data:
