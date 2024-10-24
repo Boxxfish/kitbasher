@@ -86,7 +86,7 @@ if __name__ == "__main__":
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
     if cfg.checkpoint:
-        with open(Path(cfg.checkpoint).parent / "meta.json", "r") as f:
+        with open(Path(cfg.checkpoint).parent.parent / "meta.json", "r") as f:
             meta_json = json.load(f)
         train_cfg = train.Config.model_validate_json(meta_json)
         q_net = QNet(
