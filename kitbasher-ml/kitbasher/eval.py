@@ -93,9 +93,7 @@ if __name__ == "__main__":
     if cfg.checkpoint:
         with open(Path(cfg.checkpoint).parent.parent / "meta.json", "r") as f:
             meta_json = f.read()
-        train_cfg = train.ExpMeta.model_validate_json(meta_json).args
-        print(meta_json)
-        print(train_cfg)
+        train_cfg = train.ExpMeta.model_validate_json(json.loads(meta_json)).args
         q_net = QNet(
             env.num_parts,
             32,
