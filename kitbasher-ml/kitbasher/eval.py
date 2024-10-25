@@ -93,7 +93,7 @@ if __name__ == "__main__":
     if cfg.checkpoint:
         with open(Path(cfg.checkpoint).parent.parent / "meta.json", "r") as f:
             meta_json = json.load(f)
-        train_cfg = train.Config.model_validate_json(meta_json)
+        train_cfg = train.Config.model_validate(meta_json)
         q_net = QNet(
             env.num_parts,
             32,
