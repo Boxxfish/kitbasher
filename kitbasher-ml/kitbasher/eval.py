@@ -92,8 +92,10 @@ if __name__ == "__main__":
     assert isinstance(act_space, gym.spaces.Discrete)
     if cfg.checkpoint:
         with open(Path(cfg.checkpoint).parent.parent / "meta.json", "r") as f:
-            meta_json = json.load(f)
-        train_cfg = train.Config.model_validate_json(meta_json)
+            meta_json = f.read()
+        train_cfg = train.ExpMeta.model_validate_json(meta_json).args
+        print(meta_json)
+        print(train_cfg)
         q_net = QNet(
             env.num_parts,
             32,
@@ -124,11 +126,11 @@ if __name__ == "__main__":
             )
 
             # Show model scoring screenshot
-            screenshots = env.screenshot()
-            plt.imshow(screenshots[0])
-            plt.show()
-            plt.imshow(screenshots[1])
-            plt.show()
+            #screenshots = env.screenshot()
+            #plt.imshow(screenshots[0])
+            #plt.show()
+            #plt.imshow(screenshots[1])
+            #plt.show()
             print(reward)
 
             eval_obs = eval_obs = process_obs(obs_)
