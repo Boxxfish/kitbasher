@@ -39,6 +39,7 @@ class Config:
     prompt: str = "a lego "
     checkpoint: str = ""
     use_mirror: bool = False
+    single_class: str = ""
     device: str = "cuda"
 
 
@@ -67,7 +68,11 @@ if __name__ == "__main__":
         start_fn = single_start
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
-    prompts = [cfg.prompt + l for l in LABELS]
+    labels = LABELS
+    if cfg.single_class:
+        labels = [cfg.single_class]
+    prompts = [cfg.prompt + l for l in labels]
+
     env = ConstructionEnv(
         score_fn=score_fn,
         start_fn=start_fn,
