@@ -27,6 +27,7 @@ from safetensors.torch import save_model
 from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
 from kitbasher.env import ConstructionEnv
+from kitbasher.utils import create_directory, parse_args
 
 _: Any
 INF = 10**8
@@ -342,19 +343,7 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
 
 
 if __name__ == "__main__":
-    cfg = Config()
-    parser = ArgumentParser()
-    for k, v in cfg.model_fields.items():
-        if v.annotation == bool:
-            parser.add_argument(
-                f"--{k.replace('_', '-')}", default=v.default, action="store_true"
-            )
-        else:
-            parser.add_argument(
-                f"--{k.replace('_', '-')}", default=v.default, type=v.annotation
-            )
-    args = parser.parse_args()
-    cfg = Config(**args.__dict__)
+    cfg = parse_args(Config)
     device = torch.device(cfg.device)
 
     wandb.init(
@@ -363,30 +352,7 @@ if __name__ == "__main__":
     )
 
     # Create out directory
-    assert wandb.run is not None
-    for _ in range(100):
-        if wandb.run.name != "":
-            break
-    if wandb.run.name != "":
-        out_id = wandb.run.name
-    else:
-        out_id = "testing"
-
-    out_dir = Path(cfg.out_dir)
-    exp_dir = out_dir / out_id
-    try:
-        os.mkdir(exp_dir)
-    except OSError as e:
-        print(e)
-    meta = ExpMeta(args=cfg)
-    with open(exp_dir / "meta.json", "w") as f:
-        f.write(meta.model_dump_json())
-
-    chkpt_path = exp_dir / "checkpoints"
-    try:
-        os.mkdir(chkpt_path)
-    except OSError as e:
-        print(e)
+    chkpt_path = create_directory(cfg.out_dir, ExpMeta(cfg=cfg))
 
     if cfg.score_fn == "volume":
         score_fn = volume_fill_scorer
