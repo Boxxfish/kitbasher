@@ -184,15 +184,15 @@ def main():
         for batch in tqdm(loader_train, desc="batch", leave=False):
             opt.zero_grad()
             loss = compute_loss(model, batch.to(device=cfg.device))
-            total_loss += loss.item()
+            total_loss += loss.detach().item()
             loss.backward()
             opt.step()
         total_loss /= num_train // cfg.batch_size
 
         # Run validation
         total_valid_loss = 0.0
-        for batch in tqdm(loader_valid, desc="batch", leave=False):
-            with torch.no_grad():
+        with torch.no_grad():
+            for batch in tqdm(loader_valid, desc="batch", leave=False):
                 loss = compute_loss(model, batch.to(device=cfg.device))
                 total_valid_loss += loss.item()
         total_valid_loss /= num_val // cfg.batch_size
