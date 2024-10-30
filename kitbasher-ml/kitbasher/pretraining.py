@@ -96,6 +96,7 @@ class Config(BaseModel):
     num_epochs: int = 1000
     ds_size: int = 1000
     part_emb_size: int = 32
+    lr: float = 1e-6
     num_steps: int = 16
     device: str = "cuda"
 
@@ -201,7 +202,7 @@ def main():
         clip_dim,
     )
     model.to(device=cfg.device)
-    opt = torch.optim.Adam(model.parameters())
+    opt = torch.optim.Adam(model.parameters(), lr=cfg.lr)
     for epoch in tqdm(range(cfg.num_epochs), desc="epoch"):
         total_loss = 0.0
         for batch in tqdm(loader_train, desc="batch", leave=False):
@@ -214,11 +215,11 @@ def main():
 
         # Run validation
         total_valid_loss = 0.0
-        # with torch.no_grad():
-        #     for batch in tqdm(loader_valid, desc="batch", leave=False):
-        #         loss = compute_loss(model, batch.to(device=cfg.device))
-        #         total_valid_loss += loss.item()
-        # total_valid_loss /= num_val // cfg.batch_size
+        with torch.no_grad():
+            for batch in tqdm(loader_valid, desc="batch", leave=False):
+                loss = compute_loss(model, batch.to(device=cfg.device))
+                total_valid_loss += loss.item()
+        total_valid_loss /= num_val // cfg.batch_size
 
         # Report stats
         wandb.log(
