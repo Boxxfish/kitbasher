@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import *
 from pydantic import BaseModel
 from torch import nn
@@ -13,6 +14,7 @@ from tqdm import tqdm
 from transformers import CLIPVisionModelWithProjection, CLIPImageProcessor
 import wandb
 from safetensors.torch import save_model
+import pickle as pkl
 
 from kitbasher.env import ConstructionEnv
 from kitbasher.train import single_start, volume_fill_scorer
@@ -89,6 +91,7 @@ class Pretrained(nn.Module):
 
 class Config(BaseModel):
     out_dir: str = "runs/"
+    ds_dir: str = "dataset"
     batch_size: int = 32
     num_epochs: int = 1000
     ds_size: int = 1000
@@ -121,7 +124,9 @@ def main():
     num_test = int(cfg.ds_size * 0.2)
 
     # Create env
-    env = ConstructionEnv(volume_fill_scorer, single_start, False, 1, True, cfg.num_steps)
+    env = ConstructionEnv(
+        volume_fill_scorer, single_start, False, 1, True, cfg.num_steps
+    )
 
     # Set up CLIP
     model_url = "openai/clip-vit-base-patch32"
@@ -129,38 +134,56 @@ def main():
     processor = CLIPImageProcessor.from_pretrained(model_url)
 
     # Generate dataset
-    ds_x = []
-    print("Generating data...")
-    for _ in tqdm(range(cfg.ds_size)):
-        # Generate model
-        env.reset()
-        while True:
-            graph, _, done, trunc, _ = env.step(len(env.model))
-            if done or trunc:
-                break
-        img = env.screenshot()[0]
+    ds_dir = Path(cfg.ds_dir)
+    if not ds_dir.exists():
+        ds_dir.mkdir()
+        ds_x = []
+        print("Generating data...")
+        for _ in tqdm(range(cfg.ds_size)):
+            # Generate model
+            env.reset()
+            while True:
+                graph, _, done, trunc, _ = env.step(len(env.model))
+                if done or trunc:
+                    break
+            img = env.screenshot()[0]
 
-        # Remove all action nodes
-        edge_index = subgraph(graph.action_mask.bool(), graph.edge_index, relabel_nodes=True)[0]
-        nodes = graph.x[graph.action_mask.bool()]
-        part_ids = graph.part_ids[graph.action_mask.bool()]
+            # Remove all action nodes
+            edge_index = subgraph(
+                graph.action_mask.bool(), graph.edge_index, relabel_nodes=True
+            )[0]
+            nodes = graph.x[graph.action_mask.bool()]
+            part_ids = graph.part_ids[graph.action_mask.bool()]
 
-        # Generate CLIP embedding
-        inputs = processor(
-            images=[img],
-            return_tensors="pt",
-            do_rescale=False,
-        )
-        outputs = clip(**inputs)
-        img_emb = outputs.image_embeds[0]
+            # Generate CLIP embedding
+            inputs = processor(
+                images=[img],
+                return_tensors="pt",
+                do_rescale=False,
+            )
+            outputs = clip(**inputs)
+            img_emb = outputs.image_embeds[0].detach()
 
-        new_graph = Data(nodes, edge_index, part_ids=part_ids, y=img_emb.unsqueeze(0))
+            new_graph = Data(
+                nodes, edge_index, part_ids=part_ids, y=img_emb.unsqueeze(0)
+            ).cpu()
 
-        ds_x.append(new_graph)
-    ds_x_train = ds_x[:num_train]
-    ds_x_valid = ds_x[num_train : num_train + num_val]
-    loader_train = DataLoader(ds_x_train, batch_size=cfg.batch_size, shuffle=True)
-    loader_valid = DataLoader(ds_x_valid, batch_size=cfg.batch_size, shuffle=True)
+            ds_x.append(new_graph)
+        ds_x_train = ds_x[:num_train]
+        ds_x_valid = ds_x[num_train : num_train + num_val]
+        loader_train = DataLoader(ds_x_train, batch_size=cfg.batch_size, shuffle=True)
+        loader_valid = DataLoader(ds_x_valid, batch_size=cfg.batch_size, shuffle=True)
+
+        with open(ds_dir / "train.pkl", "wb") as f:
+            pkl.dump(loader_train, f)
+        with open(ds_dir / "valid.pkl", "wb") as f:
+            pkl.dump(loader_valid, f)
+    else:
+        print("Using cached dataset.")
+        with open(ds_dir / "train.pkl", "rb") as f:
+            loader_train = pkl.load(f)
+        with open(ds_dir / "valid.pkl", "rb") as f:
+            loader_valid = pkl.load(f)
 
     # Initialize experiment
     cfg = parse_args(Config)
@@ -191,11 +214,11 @@ def main():
 
         # Run validation
         total_valid_loss = 0.0
-        with torch.no_grad():
-            for batch in tqdm(loader_valid, desc="batch", leave=False):
-                loss = compute_loss(model, batch.to(device=cfg.device))
-                total_valid_loss += loss.item()
-        total_valid_loss /= num_val // cfg.batch_size
+        # with torch.no_grad():
+        #     for batch in tqdm(loader_valid, desc="batch", leave=False):
+        #         loss = compute_loss(model, batch.to(device=cfg.device))
+        #         total_valid_loss += loss.item()
+        # total_valid_loss /= num_val // cfg.batch_size
 
         # Report stats
         wandb.log(
