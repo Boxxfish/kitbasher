@@ -96,7 +96,7 @@ class Config(BaseModel):
     num_epochs: int = 1000
     ds_size: int = 1000
     part_emb_size: int = 32
-    lr: float = 1e-6
+    lr: float = 1e-5
     num_steps: int = 16
     device: str = "cuda"
 
@@ -126,7 +126,7 @@ def main():
 
     # Create env
     env = ConstructionEnv(
-        volume_fill_scorer, single_start, False, 1, True, cfg.num_steps
+        volume_fill_scorer, single_start, False, 1, True, cfg.num_steps, use_mirror=True
     )
 
     # Set up CLIP
