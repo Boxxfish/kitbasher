@@ -292,8 +292,8 @@ if __name__ == "__main__":
         clip_dim = 512
         pretrained = Pretrained(
             env.num_parts,
-            cfg.part_emb_size,
-            cfg.num_steps,
+            meta.cfg.part_emb_size,
+            meta.cfg.num_steps,
             obs_space.node_space.shape[0],
             64,
             clip_dim,
