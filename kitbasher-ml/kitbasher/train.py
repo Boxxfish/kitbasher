@@ -242,7 +242,7 @@ if __name__ == "__main__":
     )
 
     # Create out directory
-    chkpt_path = create_directory(cfg.out_dir, ExpMeta(cfg=cfg))
+    chkpt_path = create_directory(cfg.out_dir, ExpMeta(args=cfg))
 
     if cfg.score_fn == "volume":
         score_fn = volume_fill_scorer
