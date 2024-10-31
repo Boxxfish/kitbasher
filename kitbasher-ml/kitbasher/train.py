@@ -22,12 +22,14 @@ import torch.nn as nn
 import torch_geometric.utils  # type: ignore
 import wandb
 from tqdm import tqdm
-from safetensors.torch import save_model
+from safetensors.torch import save_model, load_model
 
 from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
 from kitbasher.env import ConstructionEnv
+from kitbasher.pretraining import FeatureExtractor, Pretrained
 from kitbasher.utils import create_directory, parse_args
+from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 
 _: Any
 INF = 10**8
@@ -88,6 +90,7 @@ class Config(BaseModel):
     no_advantage: bool = False
     out_dir: str = "runs"
     use_mirror: bool = False
+    fe_path: str = ""
     single_class: str = ""
     device: str = "cuda"
 
@@ -120,6 +123,7 @@ class QNet(nn.Module):
         process_type: str,
         tanh_logit: bool,
         no_advantage: bool,
+        feature_extractor: Optional[FeatureExtractor] = None,
     ):
         nn.Module.__init__(self)
         assert process_type in ["deep_set", "gcn", "self_attn", "independent"]
@@ -168,6 +172,7 @@ class QNet(nn.Module):
                 nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1)
             )
         self.tanh_logit = tanh_logit
+        self.feature_extractor = feature_extractor
 
     def forward(self, data: Data):
         data = data.sort()
@@ -177,6 +182,8 @@ class QNet(nn.Module):
             data.batch,
             data.part_ids,
         )
+        if self.feature_extractor:
+            x = self.feature_extractor(data)
         edge_index = torch_geometric.utils.add_self_loops(edge_index)[0]
         part_embs = self.embeddings.index_select(
             0, part_ids
@@ -343,7 +350,7 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
 
 
 if __name__ == "__main__":
-    cfg = parse_args(Config)
+    cfg: Config = parse_args(Config)
     device = torch.device(cfg.device)
 
     wandb.init(
@@ -394,6 +401,22 @@ if __name__ == "__main__":
     assert isinstance(obs_space, gym.spaces.Graph)
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
+    feature_extractor = None
+    if cfg.fe_path:
+        meta_path = Path(cfg.fe_path).parent.parent / "meta.json"
+        with open(meta_path, "r") as f:
+            meta = PretrainingExpMeta.model_validate_json(f)
+        clip_dim = 512
+        pretrained = Pretrained(
+            env.num_parts,
+            cfg.part_emb_size,
+            cfg.num_steps,
+            obs_space.node_space.shape[0],
+            64,
+            clip_dim,
+        )
+        load_model(pretrained, cfg.fe_path)
+        feature_extractor = pretrained.feature_extractor
     q_net = QNet(
         env.num_parts,
         32,
@@ -403,6 +426,7 @@ if __name__ == "__main__":
         cfg.process_type,
         tanh_logit=cfg.tanh_logit,
         no_advantage=cfg.no_advantage,
+        feature_extractor=feature_extractor,
     )
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
