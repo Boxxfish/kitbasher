@@ -288,7 +288,7 @@ if __name__ == "__main__":
     if cfg.fe_path:
         meta_path = Path(cfg.fe_path).parent.parent / "meta.json"
         with open(meta_path, "r") as f:
-            meta = PretrainingExpMeta.model_validate_json(f)
+            meta = PretrainingExpMeta.model_validate_json(f.read())
         clip_dim = 512
         pretrained = Pretrained(
             env.num_parts,
