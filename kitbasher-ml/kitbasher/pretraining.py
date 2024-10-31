@@ -17,7 +17,7 @@ from safetensors.torch import save_model
 import pickle as pkl
 
 from kitbasher.env import ConstructionEnv
-from kitbasher.train import single_start, volume_fill_scorer
+from kitbasher.scorers import single_start, volume_fill_scorer
 from kitbasher.utils import create_directory, parse_args
 
 

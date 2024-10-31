@@ -28,6 +28,7 @@ from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
 from kitbasher.env import ConstructionEnv
 from kitbasher.pretraining import FeatureExtractor, Pretrained
+from kitbasher.scorers import connect_scorer, connect_start, create_clip_scorer, single_start, volume_fill_scorer
 from kitbasher.utils import create_directory, parse_args
 from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 
@@ -183,15 +184,16 @@ class QNet(nn.Module):
             data.part_ids,
         )
         if self.feature_extractor:
-            x = self.feature_extractor(data)
-        edge_index = torch_geometric.utils.add_self_loops(edge_index)[0]
-        part_embs = self.embeddings.index_select(
-            0, part_ids
-        )  # Shape: (num_nodes, part_emb_dim)
-        node_embs = torch.cat(
-            [part_embs, x], 1
-        )  # Shape: (num_nodes, node_dim + part_emb_dim)
-        x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
+            x = self.feature_extractor(data)  # Shape: (num_nodes, hidden_dim)
+        else:
+            edge_index = torch_geometric.utils.add_self_loops(edge_index)[0]
+            part_embs = self.embeddings.index_select(
+                0, part_ids
+            )  # Shape: (num_nodes, part_emb_dim)
+            node_embs = torch.cat(
+                [part_embs, x], 1
+            )  # Shape: (num_nodes, node_dim + part_emb_dim)
+            x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
         x = self.process(x, edge_index, batch)  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
 
@@ -228,125 +230,6 @@ def process_obs(obs: Data) -> Batch:
 
 def process_act_masks(obs: Data) -> Tensor:
     return obs.action_mask
-
-
-def single_start(engine: EngineWrapper):
-    config = engine.create_config(5, 0, 0, 0)
-    engine.place_part(config)
-
-
-def volume_fill_scorer(
-    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
-) -> tuple[float, bool]:
-    """
-    Grants a reward of 1 for every part that touches the volume.
-    """
-    cx, cy, cz = [0.0, 0.0, 0.0]
-    hx, hy, hz = [40.0, 10.0, 5.0]
-    score = 0
-    for placed in model:
-        part_score = 1
-        for bbox in placed.bboxes:
-            if (
-                abs(placed.position.x + bbox.center.x - cx) > (hx + bbox.half_sizes.x)
-                or abs(placed.position.y + bbox.center.y - cy)
-                > (hy + bbox.half_sizes.y)
-                or abs(placed.position.z + bbox.center.z - cz)
-                > (hz + bbox.half_sizes.z)
-            ):
-                part_score = 0
-                break
-        score += part_score
-    return score, False
-
-
-def connect_start(engine: EngineWrapper):
-    # Generate a model with 20 pieces
-    parts: List[PyPlacedConfig] = []
-    config = engine.create_config(5, 0, 0, 0)
-    engine.place_part(config)
-    parts.append(config)
-    for _ in range(20):
-        candidates = engine.gen_candidates()
-        config = random.choice(candidates)
-        parts.append(config)
-        engine.place_part(config)
-
-    engine.clear_model()
-
-    # Place two random parts of the model
-    indices = list(range(0, len(parts)))
-    random.shuffle(indices)
-    for i in range(2):
-        part = parts[indices[i]]
-        part.connections = [None for _ in part.connections]
-        engine.place_part(part)
-
-
-def connect_scorer(
-    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
-) -> tuple[float, bool]:
-    """
-    Returns 1 and ends the episode if the model is connected.
-    """
-    # Set up adjacency list
-    edges: Dict[int, List[int]] = {}
-    for e1, e2 in data.edge_index.T.tolist():
-        if e1 >= len(model) or e2 >= len(model):
-            continue
-        if e1 not in edges:
-            edges[e1] = []
-        if e2 not in edges:
-            edges[e2] = []
-        edges[e1].append(e2)
-        edges[e2].append(e1)
-
-    # Perform DFS to check number of nodes reachable from node 0
-    seen = set()
-    stack = [0]
-    while len(stack) > 0:
-        node_idx = stack.pop()
-        if node_idx in edges:
-            for neighbor in edges[node_idx]:
-                if neighbor not in seen:
-                    stack.append(neighbor)
-            seen.add(node_idx)
-
-    connected = len(seen) == len(model)
-
-    return 1.0 if connected else 0.0, connected
-
-
-def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
-    from transformers import CLIPProcessor, CLIPModel
-
-    clip = CLIPModel.from_pretrained(model_url)
-    processor = CLIPProcessor.from_pretrained(model_url)
-
-    def clip_scorer(
-        model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
-    ) -> tuple[float, bool]:
-        """
-        Returns the score returned by CLIP.
-        """
-        if not is_done:
-            return 0.0, False
-        prompt = env.prompt
-        imgs = env.screenshot()
-        inputs = processor(
-            text=[prompt],
-            images=imgs,
-            return_tensors="pt",
-            padding=True,
-            do_rescale=False,
-        )
-
-        outputs = clip(**inputs)
-        logits_per_image = outputs.logits_per_image
-        score = logits_per_image.mean().item() / 30.0
-        return score, False
-
-    return clip_scorer
 
 
 if __name__ == "__main__":
