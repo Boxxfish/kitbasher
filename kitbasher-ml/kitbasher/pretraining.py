@@ -124,7 +124,8 @@ def compute_loss(model: Pretrained, batch: Batch, use_contrast: bool) -> torch.T
         # Perform contrastive loss
         actual_logit = (-torch.sum(norm_pred * norm_actual, 1) + 1) / 2 # Shape: (batch_size)
         actual_perm_logit = (-torch.sum(norm_pred * norm_actual_perm, 1) + 1) / 2 # Shape: (batch_size)
-        loss = (torch.max(actual_logit - actual_perm_logit + 0.001, 0.0))
+        loss = (torch.max(actual_logit - actual_perm_logit + 0.001, torch.zeros(actual_logit.shape, device=actual_logit.device))).mean()
+        return loss
     else:
         # Perform cosine loss
         loss = -torch.sum(norm_pred * norm_actual, 1).mean()

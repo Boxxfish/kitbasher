@@ -19,7 +19,7 @@ def main():
     pca.fit(y.numpy())
 
     # Load feature extractor
-    fe_path = "runs/wicked-labyrinth-117/checkpoints/net-29990.safetensors"
+    fe_path = "runs/robust-sun-120/checkpoints/net-9990.safetensors"
     meta_path = Path(fe_path).parent.parent / "meta.json"
     with open(meta_path, "r") as f:
         meta = PretrainingExpMeta.model_validate_json(f.read())
