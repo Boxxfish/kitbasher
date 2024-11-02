@@ -98,6 +98,7 @@ class Config(BaseModel):
     part_emb_size: int = 32
     lr: float = 1e-5
     num_steps: int = 16
+    use_contrastive: bool = False
     device: str = "cuda"
 
 
@@ -105,15 +106,29 @@ class ExpMeta(BaseModel):
     cfg: Config
 
 
-def compute_loss(model: Pretrained, batch: Batch) -> torch.Tensor:
+def compute_loss(model: Pretrained, batch: Batch, use_contrast: bool) -> torch.Tensor:
     pred: torch.Tensor = model(batch)  # Shape: (batch_size, clip_dim)
-    actual: torch.Tensor = batch.y  # Shape: (batch_size, clip_dim)
-
-    # Perform cosine loss
     norm_pred = pred / torch.sum(pred**2, 1, keepdim=True).sqrt()
+    actual: torch.Tensor = batch.y  # Shape: (batch_size, clip_dim)
     norm_actual = actual / torch.sum(actual**2, 1, keepdim=True).sqrt()
-    loss = -torch.sum(norm_pred * norm_actual, 1).mean()
-    return loss
+    
+    # Get in-batch negatives
+    batch_size = actual.shape[0]
+    permuted_actual = torch.randperm(batch_size)
+    while torch.any(torch.arange(batch_size) == permuted_actual):
+        permuted_actual = torch.randperm(batch_size)
+    actual_permuted = actual[permuted_actual]  # Shape: (batch_size, clip_dim)
+    norm_actual_perm = actual_permuted / torch.sum(actual_permuted**2, 1, keepdim=True).sqrt()
+
+    if use_contrast:
+        # Perform contrastive loss
+        actual_logit = (-torch.sum(norm_pred * norm_actual, 1) + 1) / 2 # Shape: (batch_size)
+        actual_perm_logit = (-torch.sum(norm_pred * norm_actual_perm, 1) + 1) / 2 # Shape: (batch_size)
+        loss = (torch.max(actual_logit - actual_perm_logit + 0.001, 0.0))
+    else:
+        # Perform cosine loss
+        loss = -torch.sum(norm_pred * norm_actual, 1).mean()
+        return loss
 
 
 def main():
@@ -207,7 +222,7 @@ def main():
         total_loss = 0.0
         for batch in tqdm(loader_train, desc="batch", leave=False):
             opt.zero_grad()
-            loss = compute_loss(model, batch.to(device=cfg.device))
+            loss = compute_loss(model, batch.to(device=cfg.device), cfg.use_contrastive)
             total_loss += loss.detach().item()
             loss.backward()
             opt.step()
@@ -217,7 +232,7 @@ def main():
         total_valid_loss = 0.0
         with torch.no_grad():
             for batch in tqdm(loader_valid, desc="batch", leave=False):
-                loss = compute_loss(model, batch.to(device=cfg.device))
+                loss = compute_loss(model, batch.to(device=cfg.device), False)
                 total_valid_loss += loss.item()
         total_valid_loss /= num_val // cfg.batch_size
 
