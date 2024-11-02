@@ -126,7 +126,7 @@ def main():
 
     # Create env
     env = ConstructionEnv(
-        volume_fill_scorer, single_start, False, 1, True, cfg.num_steps, use_mirror=True
+        volume_fill_scorer, single_start, False, 1, True, cfg.num_steps
     )
 
     # Set up CLIP
