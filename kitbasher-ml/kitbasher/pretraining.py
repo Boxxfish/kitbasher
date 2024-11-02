@@ -197,10 +197,10 @@ def main():
         print("Using cached dataset.")
         with open(ds_dir / "train.pkl", "rb") as f:
             loader_train: DataLoader = pkl.load(f)
-            loader_train.batch_size = cfg.batch_size
+            loader_train = DataLoader(loader_train.dataset, cfg.batch_size, shuffle=True)
         with open(ds_dir / "valid.pkl", "rb") as f:
             loader_valid: DataLoader = pkl.load(f)
-            loader_valid.batch_size = cfg.batch_size
+            loader_valid = DataLoader(loader_valid.dataset, cfg.batch_size, shuffle=True)
 
     # Initialize experiment
     cfg = parse_args(Config)
