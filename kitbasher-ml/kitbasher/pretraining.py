@@ -127,7 +127,7 @@ def compute_loss(model: Pretrained, batch: Batch, contrastive_coeff: float) -> t
     
     # Perform cosine loss
     loss = -torch.sum(norm_pred * norm_actual, 1).mean()
-    return loss * c_loss * contrastive_coeff
+    return loss + c_loss * contrastive_coeff
 
 
 def main():
