@@ -227,7 +227,7 @@ def main():
             total_loss += loss.detach().item()
             loss.backward()
             opt.step()
-        total_loss /= num_train // cfg.batch_size
+        total_loss /= (num_train + 1) // cfg.batch_size
 
         # Run validation
         total_valid_loss = 0.0
@@ -235,7 +235,7 @@ def main():
             for batch in tqdm(loader_valid, desc="batch", leave=False):
                 loss = compute_loss(model, batch.to(device=cfg.device), 0.0)
                 total_valid_loss += loss.item()
-        total_valid_loss /= num_val // cfg.batch_size
+        total_valid_loss /= (num_val + 1) // cfg.batch_size
 
         # Report stats
         wandb.log(
