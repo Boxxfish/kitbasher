@@ -50,7 +50,7 @@ def main():
     xformed_y = pca.transform(y).T  # Shape: (3, num_samples)
 
     # Get model output
-    index = cfg.index
+    index = args.index
     graph = Batch.from_data_list([loader_train.dataset[index]])
     emb = feature_extractor(graph)[0].T.detach().cpu()  # Shape: (3, 1)
 
