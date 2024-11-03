@@ -124,11 +124,12 @@ if __name__ == "__main__":
             )
 
             # Show model scoring screenshot
-            #screenshots = env.screenshot()
-            #plt.imshow(screenshots[0])
-            #plt.show()
-            #plt.imshow(screenshots[1])
-            #plt.show()
+            if done or trunc:
+                screenshots = env.screenshot()
+                plt.imshow(screenshots[0])
+                plt.show()
+                plt.imshow(screenshots[1])
+                plt.show()
             print(reward)
 
             eval_obs = eval_obs = process_obs(obs_)
