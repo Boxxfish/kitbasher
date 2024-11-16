@@ -22,11 +22,15 @@ import torch.nn as nn
 import torch_geometric.utils  # type: ignore
 import wandb
 from tqdm import tqdm
-from safetensors.torch import save_model
+from safetensors.torch import save_model, load_model
 
 from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
 from kitbasher.env import ConstructionEnv
+from kitbasher.pretraining import FeatureExtractor, Pretrained
+from kitbasher.scorers import connect_scorer, connect_start, create_clip_scorer, single_start, volume_fill_scorer
+from kitbasher.utils import create_directory, parse_args
+from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 
 _: Any
 INF = 10**8
@@ -87,6 +91,7 @@ class Config(BaseModel):
     no_advantage: bool = False
     out_dir: str = "runs"
     use_mirror: bool = False
+    fe_path: str = ""
     single_class: str = ""
     device: str = "cuda"
 
@@ -119,6 +124,7 @@ class QNet(nn.Module):
         process_type: str,
         tanh_logit: bool,
         no_advantage: bool,
+        feature_extractor: Optional[FeatureExtractor] = None,
     ):
         nn.Module.__init__(self)
         assert process_type in ["deep_set", "gcn", "self_attn", "independent"]
@@ -167,6 +173,7 @@ class QNet(nn.Module):
                 nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1)
             )
         self.tanh_logit = tanh_logit
+        self.feature_extractor = feature_extractor
 
     def forward(self, data: Data):
         data = data.sort()
@@ -176,14 +183,17 @@ class QNet(nn.Module):
             data.batch,
             data.part_ids,
         )
-        edge_index = torch_geometric.utils.add_self_loops(edge_index)[0]
-        part_embs = self.embeddings.index_select(
-            0, part_ids
-        )  # Shape: (num_nodes, part_emb_dim)
-        node_embs = torch.cat(
-            [part_embs, x], 1
-        )  # Shape: (num_nodes, node_dim + part_emb_dim)
-        x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
+        if self.feature_extractor:
+            x = self.feature_extractor(data)  # Shape: (num_nodes, hidden_dim)
+        else:
+            edge_index = torch_geometric.utils.add_self_loops(edge_index)[0]
+            part_embs = self.embeddings.index_select(
+                0, part_ids
+            )  # Shape: (num_nodes, part_emb_dim)
+            node_embs = torch.cat(
+                [part_embs, x], 1
+            )  # Shape: (num_nodes, node_dim + part_emb_dim)
+            x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
         x = self.process(x, edge_index, batch)  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
 
@@ -222,139 +232,8 @@ def process_act_masks(obs: Data) -> Tensor:
     return obs.action_mask
 
 
-def single_start(engine: EngineWrapper):
-    config = engine.create_config(5, 0, 0, 0)
-    engine.place_part(config)
-
-
-def volume_fill_scorer(
-    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
-) -> tuple[float, bool]:
-    """
-    Grants a reward of 1 for every part that touches the volume.
-    """
-    cx, cy, cz = [0.0, 0.0, 0.0]
-    hx, hy, hz = [40.0, 10.0, 5.0]
-    score = 0
-    for placed in model:
-        part_score = 1
-        for bbox in placed.bboxes:
-            if (
-                abs(placed.position.x + bbox.center.x - cx) > (hx + bbox.half_sizes.x)
-                or abs(placed.position.y + bbox.center.y - cy)
-                > (hy + bbox.half_sizes.y)
-                or abs(placed.position.z + bbox.center.z - cz)
-                > (hz + bbox.half_sizes.z)
-            ):
-                part_score = 0
-                break
-        score += part_score
-    return score, False
-
-
-def connect_start(engine: EngineWrapper):
-    # Generate a model with 20 pieces
-    parts: List[PyPlacedConfig] = []
-    config = engine.create_config(5, 0, 0, 0)
-    engine.place_part(config)
-    parts.append(config)
-    for _ in range(20):
-        candidates = engine.gen_candidates()
-        config = random.choice(candidates)
-        parts.append(config)
-        engine.place_part(config)
-
-    engine.clear_model()
-
-    # Place two random parts of the model
-    indices = list(range(0, len(parts)))
-    random.shuffle(indices)
-    for i in range(2):
-        part = parts[indices[i]]
-        part.connections = [None for _ in part.connections]
-        engine.place_part(part)
-
-
-def connect_scorer(
-    model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
-) -> tuple[float, bool]:
-    """
-    Returns 1 and ends the episode if the model is connected.
-    """
-    # Set up adjacency list
-    edges: Dict[int, List[int]] = {}
-    for e1, e2 in data.edge_index.T.tolist():
-        if e1 >= len(model) or e2 >= len(model):
-            continue
-        if e1 not in edges:
-            edges[e1] = []
-        if e2 not in edges:
-            edges[e2] = []
-        edges[e1].append(e2)
-        edges[e2].append(e1)
-
-    # Perform DFS to check number of nodes reachable from node 0
-    seen = set()
-    stack = [0]
-    while len(stack) > 0:
-        node_idx = stack.pop()
-        if node_idx in edges:
-            for neighbor in edges[node_idx]:
-                if neighbor not in seen:
-                    stack.append(neighbor)
-            seen.add(node_idx)
-
-    connected = len(seen) == len(model)
-
-    return 1.0 if connected else 0.0, connected
-
-
-def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
-    from transformers import CLIPProcessor, CLIPModel
-
-    clip = CLIPModel.from_pretrained(model_url)
-    processor = CLIPProcessor.from_pretrained(model_url)
-
-    def clip_scorer(
-        model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
-    ) -> tuple[float, bool]:
-        """
-        Returns the score returned by CLIP.
-        """
-        if not is_done:
-            return 0.0, False
-        prompt = env.prompt
-        imgs = env.screenshot()
-        inputs = processor(
-            text=[prompt],
-            images=imgs,
-            return_tensors="pt",
-            padding=True,
-            do_rescale=False,
-        )
-
-        outputs = clip(**inputs)
-        logits_per_image = outputs.logits_per_image
-        score = logits_per_image.mean().item() / 30.0
-        return score, False
-
-    return clip_scorer
-
-
 if __name__ == "__main__":
-    cfg = Config()
-    parser = ArgumentParser()
-    for k, v in cfg.model_fields.items():
-        if v.annotation == bool:
-            parser.add_argument(
-                f"--{k.replace('_', '-')}", default=v.default, action="store_true"
-            )
-        else:
-            parser.add_argument(
-                f"--{k.replace('_', '-')}", default=v.default, type=v.annotation
-            )
-    args = parser.parse_args()
-    cfg = Config(**args.__dict__)
+    cfg: Config = parse_args(Config)
     device = torch.device(cfg.device)
 
     wandb.init(
@@ -363,30 +242,7 @@ if __name__ == "__main__":
     )
 
     # Create out directory
-    assert wandb.run is not None
-    for _ in range(100):
-        if wandb.run.name != "":
-            break
-    if wandb.run.name != "":
-        out_id = wandb.run.name
-    else:
-        out_id = "testing"
-
-    out_dir = Path(cfg.out_dir)
-    exp_dir = out_dir / out_id
-    try:
-        os.mkdir(exp_dir)
-    except OSError as e:
-        print(e)
-    meta = ExpMeta(args=cfg)
-    with open(exp_dir / "meta.json", "w") as f:
-        f.write(meta.model_dump_json())
-
-    chkpt_path = exp_dir / "checkpoints"
-    try:
-        os.mkdir(chkpt_path)
-    except OSError as e:
-        print(e)
+    chkpt_path = create_directory(cfg.out_dir, ExpMeta(args=cfg))
 
     if cfg.score_fn == "volume":
         score_fn = volume_fill_scorer
@@ -428,6 +284,22 @@ if __name__ == "__main__":
     assert isinstance(obs_space, gym.spaces.Graph)
     assert isinstance(obs_space.node_space, gym.spaces.Box)
     assert isinstance(act_space, gym.spaces.Discrete)
+    feature_extractor = None
+    if cfg.fe_path:
+        meta_path = Path(cfg.fe_path).parent.parent / "meta.json"
+        with open(meta_path, "r") as f:
+            meta = PretrainingExpMeta.model_validate_json(f.read())
+        clip_dim = 512
+        pretrained = Pretrained(
+            env.num_parts,
+            meta.cfg.part_emb_size,
+            meta.cfg.num_steps,
+            obs_space.node_space.shape[0],
+            64,
+            clip_dim,
+        )
+        load_model(pretrained, cfg.fe_path)
+        feature_extractor = pretrained.feature_extractor
     q_net = QNet(
         env.num_parts,
         32,
@@ -437,6 +309,7 @@ if __name__ == "__main__":
         cfg.process_type,
         tanh_logit=cfg.tanh_logit,
         no_advantage=cfg.no_advantage,
+        feature_extractor=feature_extractor,
     )
     q_net_target = copy.deepcopy(q_net)
     q_net_target.to(device)
