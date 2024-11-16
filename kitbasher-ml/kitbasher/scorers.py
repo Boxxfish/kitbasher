@@ -115,7 +115,6 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
             images=imgs,
             return_tensors="pt",
             padding=True,
-            do_rescale=False,
         )
 
         outputs = clip(**inputs)

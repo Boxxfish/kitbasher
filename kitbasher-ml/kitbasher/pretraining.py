@@ -174,7 +174,6 @@ def main():
             inputs = processor(
                 images=[img],
                 return_tensors="pt",
-                do_rescale=False,
             )
             outputs = clip(**inputs)
             img_emb = outputs.image_embeds[0].detach()
