@@ -34,7 +34,6 @@ def main():
         images=[img],
         return_tensors="pt",
         padding=True,
-        do_rescale=False,
     )
 
     outputs = clip(**inputs)

@@ -34,7 +34,7 @@ class DatasetMeta(BaseModel):
 
 class Args(BaseModel):
     ds_path: str
-    model_url: str # Can be either URL or local path
+    model: str # Can be either URL or local path
     prompt: str # E.g. "a lego "
 
 def main():
@@ -55,8 +55,8 @@ def main():
             cls_imgs[c.id].append(img)
 
     # Load model
-    clip = CLIPModel.from_pretrained(args.model_url)
-    processor = CLIPProcessor.from_pretrained(args.model_url)
+    clip = CLIPModel.from_pretrained(args.model)
+    processor = CLIPProcessor.from_pretrained(args.model)
 
     # Run images through model
     prompts = [args.prompt + c.prompt for c in meta.classes]
@@ -68,15 +68,14 @@ def main():
             images=images,
             return_tensors="pt",
             padding=True,
-            do_rescale=False,
         )
         outputs = clip(**inputs)
-        cls_probs[cls_id] = torch.softmax(outputs.logits_per_image, 0).tolist() # Shape: (num_imgs, num_prompts)
+        cls_probs[cls_id] = outputs.logits_per_image.tolist() # Shape: (num_imgs, num_prompts)
 
     # Create confusion matrix
-    y_true = sum([[c.id] * len(cls_imgs[c.id]) for c in meta.classes], start=[])
-    y_pred = sum([[idx_to_cls[prob.amax()] for prob in cls_probs[c.id]] for c in meta.classes], start=[])
-    c_matrix = confusion_matrix(y_true, y_pred, labels=[c.id for c in meta.classes])
+    y_true = sum([[c.id] * len(cls_probs[c.id]) for c in meta.classes], start=[])
+    y_pred = sum([[idx_to_cls[torch.tensor(prob).argmax().item()] for prob in cls_probs[c.id]] for c in meta.classes], start=[])
+    c_matrix = confusion_matrix(y_true, y_pred, labels=[c.id for c in meta.classes], normalize="true")
     c_disp = ConfusionMatrixDisplay(c_matrix, display_labels=[c.id for c in meta.classes])
     c_disp.plot()
     plt.show()
