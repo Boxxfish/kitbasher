@@ -47,7 +47,6 @@ def main():
         clip_dim,
     )
     load_model(pretrained, fe_path)
-    feature_extractor = pretrained.feature_extractor
 
     # Load valid set
     loader_train = pkl.load(open("dataset/valid.pkl", "rb"))
@@ -59,10 +58,10 @@ def main():
     # Get model output
     index = args.index
     graph = Batch.from_data_list([loader_train.dataset[index]])
-    emb = feature_extractor(graph)[0]  # Shape: (1, 3)
+    emb = pretrained(graph)  # Shape: (1, clip_dim)
     if args.normalize:
         emb = normalize(emb)
-    emb = emb.T.detach().cpu() # Shape: (3, 1)
+    emb = pca.transform(emb.detach().cpu()).T # Shape: (3, 1)
 
     # Plot
     fig = plt.figure()
