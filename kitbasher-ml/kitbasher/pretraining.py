@@ -106,24 +106,33 @@ class ExpMeta(BaseModel):
     cfg: Config
 
 
-def compute_loss(model: Pretrained, batch: Batch, contrastive_coeff: float) -> torch.Tensor:
+def compute_loss(model: Pretrained, batch: Batch, contrastive_coeff: float, use_npair: bool) -> torch.Tensor:
     pred: torch.Tensor = model(batch)  # Shape: (batch_size, clip_dim)
     norm_pred = pred / torch.sum(pred**2, 1, keepdim=True).sqrt()
     actual: torch.Tensor = batch.y  # Shape: (batch_size, clip_dim)
     norm_actual = actual / torch.sum(actual**2, 1, keepdim=True).sqrt()
-    
-    # Get in-batch negatives
-    batch_size = actual.shape[0]
-    permuted_actual = torch.randperm(batch_size)
-    while torch.any(torch.arange(batch_size) == permuted_actual):
-        permuted_actual = torch.randperm(batch_size)
-    actual_permuted = actual[permuted_actual]  # Shape: (batch_size, clip_dim)
-    norm_actual_perm = actual_permuted / torch.sum(actual_permuted**2, 1, keepdim=True).sqrt()
 
     # Perform contrastive loss
-    actual_logit = (-torch.sum(norm_pred * norm_actual, 1) + 1) / 2 # Shape: (batch_size)
-    actual_perm_logit = (-torch.sum(norm_pred * norm_actual_perm, 1) + 1) / 2 # Shape: (batch_size)
-    c_loss = (torch.max(actual_logit - actual_perm_logit + 0.001, torch.zeros(actual_logit.shape, device=actual_logit.device))).mean()
+    # If use_npair is True, negatives are all other items in batch. Otherwise, a random in-batch negative will be chosen.
+    batch_size = actual.shape[0]
+    if not use_npair:
+        # Get in-batch negatives
+        permuted_actual = torch.randperm(batch_size)
+        while torch.any(torch.arange(batch_size) == permuted_actual):
+            permuted_actual = torch.randperm(batch_size)
+        actual_permuted = actual[permuted_actual]  # Shape: (batch_size, clip_dim)
+        norm_actual_perm = actual_permuted / torch.sum(actual_permuted**2, 1, keepdim=True).sqrt()
+
+        # Perform loss
+        actual_logit = (-torch.sum(norm_pred * norm_actual, 1) + 1) / 2 # Shape: (batch_size)
+        actual_perm_logit = (-torch.sum(norm_pred * norm_actual_perm, 1) + 1) / 2 # Shape: (batch_size)
+        c_loss = (torch.max(actual_logit - actual_perm_logit + 0.001, torch.zeros(actual_logit.shape, device=actual_logit.device))).mean()
+    else:
+        # Similar to the original CLIP, we construct a score matrix and maximize the diagonal
+        crit = nn.CrossEntropyLoss()
+        scores = pred @ actual.T # Shape: (batch_size, batch_size)
+        y_labels = torch.arange(0, batch_size)
+        c_loss = crit(scores, y_labels)
     
     # Perform cosine loss
     loss = -torch.sum(norm_pred * norm_actual, 1).mean()
