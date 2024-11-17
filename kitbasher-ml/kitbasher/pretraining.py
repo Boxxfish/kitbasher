@@ -99,6 +99,7 @@ class Config(BaseModel):
     lr: float = 1e-5
     num_steps: int = 16
     contrastive_coeff: float = 0.0
+    use_npair: bool = False
     device: str = "cuda"
 
 
@@ -231,7 +232,7 @@ def main():
         total_loss = 0.0
         for batch in tqdm(loader_train, desc="batch", leave=False):
             opt.zero_grad()
-            loss = compute_loss(model, batch.to(device=cfg.device), cfg.contrastive_coeff)
+            loss = compute_loss(model, batch.to(device=cfg.device), cfg.contrastive_coeff, cfg.use_npair)
             total_loss += loss.detach().item()
             loss.backward()
             opt.step()
@@ -241,7 +242,7 @@ def main():
         total_valid_loss = 0.0
         with torch.no_grad():
             for batch in tqdm(loader_valid, desc="batch", leave=False):
-                loss = compute_loss(model, batch.to(device=cfg.device), 0.0)
+                loss = compute_loss(model, batch.to(device=cfg.device), 0.0, False)
                 total_valid_loss += loss.item()
         total_valid_loss /= (num_val // cfg.batch_size) + 1
 
