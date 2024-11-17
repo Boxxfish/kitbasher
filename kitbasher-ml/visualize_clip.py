@@ -13,16 +13,21 @@ from torch_geometric.data import Batch
 
 from argparse import ArgumentParser
 
+def normalize(x: torch.Tensor) -> torch.Tensor:
+    return x / torch.sum(x**2, 1, keepdim=True).sqrt()
 
 def main():
     parser = ArgumentParser()
     parser.add_argument("--fe-path", type=str)
     parser.add_argument("--index", type=int, default=0)
+    parser.add_argument("--normalize", default=False, action="store_true")
     args = parser.parse_args()
 
     # Fit PCA
     loader_train: DataLoader = pkl.load(open("dataset/train.pkl", "rb"))
     y = torch.cat([batch.y for batch in loader_train], 0)
+    if args.normalize:
+        y = normalize(y)
     pca = PCA(3)
     pca.fit(y.numpy())
 
@@ -47,12 +52,17 @@ def main():
     # Load valid set
     loader_train = pkl.load(open("dataset/valid.pkl", "rb"))
     y = torch.cat([batch.y for batch in loader_train], 0)
+    if args.normalize:
+        y = normalize(y)
     xformed_y = pca.transform(y).T  # Shape: (3, num_samples)
 
     # Get model output
     index = args.index
     graph = Batch.from_data_list([loader_train.dataset[index]])
-    emb = feature_extractor(graph)[0].T.detach().cpu()  # Shape: (3, 1)
+    emb = feature_extractor(graph)[0]  # Shape: (1, 3)
+    if args.normalize:
+        emb = normalize(emb)
+    emb = emb.T.detach().cpu() # Shape: (3, 1)
 
     # Plot
     fig = plt.figure()
