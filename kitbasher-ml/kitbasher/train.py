@@ -92,6 +92,7 @@ class Config(BaseModel):
     out_dir: str = "runs"
     use_mirror: bool = False
     fe_path: str = ""
+    freeze_fe: bool = False
     single_class: str = ""
     device: str = "cuda"
 
@@ -124,6 +125,7 @@ class QNet(nn.Module):
         process_type: str,
         tanh_logit: bool,
         no_advantage: bool,
+        freeze_fe: bool,
         feature_extractor: Optional[FeatureExtractor] = None,
     ):
         nn.Module.__init__(self)
@@ -174,6 +176,9 @@ class QNet(nn.Module):
             )
         self.tanh_logit = tanh_logit
         self.feature_extractor = feature_extractor
+        if freeze_fe:
+            for param in self.feature_extractor.parameters():
+                param.requires_grad = False
 
     def forward(self, data: Data):
         data = data.sort()
@@ -309,6 +314,7 @@ if __name__ == "__main__":
         cfg.process_type,
         tanh_logit=cfg.tanh_logit,
         no_advantage=cfg.no_advantage,
+        freeze_fe=cfg.freeze_fe,
         feature_extractor=feature_extractor,
     )
     q_net_target = copy.deepcopy(q_net)

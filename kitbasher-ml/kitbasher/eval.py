@@ -12,6 +12,7 @@ from safetensors.torch import load_model
 import numpy as np
 import torch
 from kitbasher import train
+from kitbasher.pretraining import Pretrained
 from kitbasher.train import (
     LABELS,
     QNet,
@@ -24,6 +25,7 @@ from kitbasher.train import (
     single_start,
     volume_fill_scorer,
 )
+from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 from kitbasher.env import ConstructionEnv
 
 
@@ -94,6 +96,22 @@ if __name__ == "__main__":
         with open(Path(cfg.checkpoint).parent.parent / "meta.json", "r") as f:
             meta_json = f.read()
         train_cfg = train.ExpMeta.model_validate_json(meta_json).args
+        feature_extractor = None
+        if train_cfg.fe_path:
+            meta_path = Path(cfg.fe_path).parent.parent / "meta.json"
+            with open(meta_path, "r") as f:
+                meta = PretrainingExpMeta.model_validate_json(f.read())
+            clip_dim = 512
+            pretrained = Pretrained(
+                env.num_parts,
+                meta.cfg.part_emb_size,
+                meta.cfg.num_steps,
+                obs_space.node_space.shape[0],
+                64,
+                clip_dim,
+            )
+            # Load model should update FE weights as well
+            feature_extractor = pretrained.feature_extractor
         q_net = QNet(
             env.num_parts,
             32,
@@ -103,6 +121,8 @@ if __name__ == "__main__":
             train_cfg.process_type,
             train_cfg.tanh_logit,
             train_cfg.no_advantage,
+            freeze_fe=train_cfg.freeze_fe,
+            feature_extractor=feature_extractor,
         )
         load_model(q_net, cfg.checkpoint)
     with torch.no_grad():
