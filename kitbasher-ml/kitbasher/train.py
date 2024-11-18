@@ -93,6 +93,7 @@ class Config(BaseModel):
     use_mirror: bool = False
     fe_path: str = ""
     freeze_fe: bool = False
+    freeze_fe_for: int = -1
     single_class: str = ""
     device: str = "cuda"
 
@@ -179,6 +180,10 @@ class QNet(nn.Module):
         if freeze_fe:
             for param in self.feature_extractor.parameters():
                 param.requires_grad = False
+
+    def freeze_fe(self, should_freeze: bool):
+        for param in self.feature_extractor.parameters():
+            param.requires_grad = not should_freeze
 
     def forward(self, data: Data):
         data = data.sort()
@@ -332,6 +337,7 @@ if __name__ == "__main__":
     mask = process_act_masks(obs_)
     warmup_steps = int(cfg.buffer_size / cfg.train_steps)
     for step in tqdm(range(warmup_steps + cfg.iterations), position=0):
+        train_step = max(step - warmup_steps, 0)
         percent_done = max((step - warmup_steps) / cfg.iterations, 0)
 
         # Collect experience
@@ -370,6 +376,10 @@ if __name__ == "__main__":
 
         # Train
         if buffer.filled:
+            # Unfreeze feature extractor if unfreezing is specified
+            if cfg.freeze_fe_for > 0 and train_step == cfg.freeze_fe_for:
+                q_net.freeze_fe(False)
+
             total_q_loss = train_dqn(
                 q_net,
                 q_net_target,
