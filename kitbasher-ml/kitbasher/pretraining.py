@@ -132,7 +132,7 @@ def compute_loss(model: Pretrained, batch: Batch, contrastive_coeff: float, use_
         # Similar to the original CLIP, we construct a score matrix and maximize the diagonal
         crit = nn.CrossEntropyLoss()
         scores = pred @ actual.T # Shape: (batch_size, batch_size)
-        y_labels = torch.arange(0, batch_size)
+        y_labels = torch.arange(0, batch_size, device=scores.device)
         c_loss = crit(scores, y_labels)
     
     # Perform cosine loss
