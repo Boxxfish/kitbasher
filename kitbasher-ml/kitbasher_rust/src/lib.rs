@@ -512,6 +512,7 @@ impl Renderer {
 
         let mut model_center = Vector3::from(model_bbox.center.to_array());
         model_center.y = -model_center.y;
+        model_center.x = -model_center.x;
         let at = model_center;
 
         // Render both front and back

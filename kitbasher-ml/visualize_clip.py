@@ -50,7 +50,7 @@ def main():
 
     # Load valid set
     loader_train = pkl.load(open("dataset/valid.pkl", "rb"))
-    y = torch.cat([batch.y for batch in loader_train], 0)
+    y = torch.cat([batch.y for batch in loader_train], 0)[:100]
     if args.normalize:
         y = normalize(y)
     xformed_y = pca.transform(y).T  # Shape: (3, num_samples)

@@ -133,7 +133,7 @@ def compute_loss(model: Pretrained, batch: Batch, contrastive_coeff: float, use_
         crit = nn.CrossEntropyLoss()
         scores = pred @ actual.T # Shape: (batch_size, batch_size)
         y_labels = torch.arange(0, batch_size, device=scores.device)
-        c_loss = crit(scores, y_labels)
+        c_loss = (crit(scores, y_labels) + crit(scores.T, y_labels)) / 2.0
     
     # Perform cosine loss
     loss = -torch.sum(norm_pred * norm_actual, 1).mean()

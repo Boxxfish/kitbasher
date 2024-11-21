@@ -98,7 +98,7 @@ if __name__ == "__main__":
         train_cfg = train.ExpMeta.model_validate_json(meta_json).args
         feature_extractor = None
         if train_cfg.fe_path:
-            meta_path = Path(cfg.fe_path).parent.parent / "meta.json"
+            meta_path = Path(train_cfg.fe_path).parent.parent / "meta.json"
             with open(meta_path, "r") as f:
                 meta = PretrainingExpMeta.model_validate_json(f.read())
             clip_dim = 512
