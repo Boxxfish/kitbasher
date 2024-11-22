@@ -128,6 +128,7 @@ if __name__ == "__main__":
     with torch.no_grad():
         obs_, info = env.reset()
         env.render()
+        print("Label:", env.prompts[env.label_idx])
         eval_obs = process_obs(obs_)
         eval_mask = process_act_masks(obs_)
         for _ in range(cfg.max_eval_steps):

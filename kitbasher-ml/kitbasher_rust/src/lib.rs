@@ -374,7 +374,7 @@ impl Renderer {
                 }
             }
         }
-        
+
         let event_loop = winit::event_loop::EventLoopBuilder::new().build();
 
         Self {
@@ -427,13 +427,13 @@ impl Renderer {
             // Render both original part and outline
             let part_xform = Matrix4::from_translation(Vector3::new(
                 placed.position.x,
-                -placed.position.y,
-                -placed.position.z,
+                placed.position.y,
+                placed.position.z,
             )) * Matrix4::from(Quaternion::new(
-                placed.rotation.z,
                 placed.rotation.w,
                 placed.rotation.x,
                 placed.rotation.y,
+                placed.rotation.z,
             ));
 
             // Part model
@@ -510,25 +510,44 @@ impl Renderer {
             );
         }
 
-        let mut model_center = Vector3::from(model_bbox.center.to_array());
-        model_center.y = -model_center.y;
-        model_center.x = -model_center.x;
+        // Update bbox if mirroring
+        if self.use_mirror {
+            let mut flipped_bbox = model_bbox;
+            flipped_bbox.center.x = -flipped_bbox.center.x;
+            model_bbox = model_bbox.union(&flipped_bbox);
+        }
+
+        let model_center = Vector3::from(model_bbox.center.to_array());
         let at = model_center;
 
         // Render both front and back
         let mut buffers = Vec::new();
-        for offset in [vec3(80., -50., 100.), vec3(-100., -50., -80.)] {
+        for offset in [vec3(80., 50., 100.), vec3(-100., 50., -80.)] {
             let eye = offset + model_center;
             let directional = DirectionalLight::new(&context, 2.0, Srgba::WHITE, &(at - eye));
             let camera = Camera::new_perspective(
                 viewport,
                 eye,
                 at,
-                Vector3::unit_y(),
+                -Vector3::unit_y(),
                 degrees(60.0),
                 0.1,
                 1000.0,
             );
+
+            // Debug render the bounding box
+            // let aabb = AxisAlignedBoundingBox::new_with_positions(&[
+            //     (model_bbox.center + model_bbox.half_sizes)
+            //         .to_array()
+            //         .into(),
+            //     (model_bbox.center - model_bbox.half_sizes)
+            //         .to_array()
+            //         .into(),
+            // ]);
+            // let bounding_box_cube = Gm::new(
+            //     BoundingBox::new(&context, aabb),
+            //     PhysicalMaterial::new_opaque(&context, &outline_material),
+            // );
 
             let buffer = RenderTarget::new(
                 render_tex.as_color_target(None),
