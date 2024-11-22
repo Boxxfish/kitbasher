@@ -13,6 +13,7 @@ import numpy as np
 import torch
 from kitbasher import train
 from kitbasher.pretraining import Pretrained
+from kitbasher.scorers import create_contrastive_clip_scorer
 from kitbasher.train import (
     LABELS,
     QNet,
@@ -67,6 +68,9 @@ if __name__ == "__main__":
         start_fn = connect_start
     elif cfg.score_fn == "clip":
         score_fn = create_clip_scorer()
+        start_fn = single_start
+    elif cfg.score_fn == "contrastive_clip":
+        score_fn = create_contrastive_clip_scorer()
         start_fn = single_start
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")

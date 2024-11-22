@@ -28,7 +28,7 @@ from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
 from kitbasher.env import ConstructionEnv
 from kitbasher.pretraining import FeatureExtractor, Pretrained
-from kitbasher.scorers import connect_scorer, connect_start, create_clip_scorer, single_start, volume_fill_scorer
+from kitbasher.scorers import connect_scorer, connect_start, create_clip_scorer, create_contrastive_clip_scorer, single_start, volume_fill_scorer
 from kitbasher.utils import create_directory, parse_args
 from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 
@@ -262,6 +262,9 @@ if __name__ == "__main__":
         start_fn = connect_start
     elif cfg.score_fn == "clip":
         score_fn = create_clip_scorer()
+        start_fn = single_start
+    elif cfg.score_fn == "contrastive_clip":
+        score_fn = create_contrastive_clip_scorer()
         start_fn = single_start
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")

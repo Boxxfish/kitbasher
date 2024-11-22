@@ -123,3 +123,33 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
         return score, False
 
     return clip_scorer
+
+def create_contrastive_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
+    from transformers import CLIPProcessor, CLIPModel
+
+    clip = CLIPModel.from_pretrained(model_url)
+    processor = CLIPProcessor.from_pretrained(model_url)
+
+    def clip_scorer(
+        model: List[PyPlacedConfig], data: Data, env: "ConstructionEnv", is_done: bool
+    ) -> tuple[float, bool]:
+        """
+        Returns the score returned by CLIP.
+        """
+        if not is_done:
+            return 0.0, False
+        label_idx = env.label_idx
+        imgs = env.screenshot()
+        inputs = processor(
+            text=env.prompts,
+            images=imgs,
+            return_tensors="pt",
+            padding=True,
+        )
+
+        outputs = clip(**inputs)
+        logits_per_image = outputs.logits_per_image.softmax(1)
+        score = logits_per_image.mean(0)[label_idx].item()
+        return score, False
+
+    return clip_scorer
