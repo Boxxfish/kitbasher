@@ -3,7 +3,7 @@ import zmq
 from transformers import CLIPProcessor, CLIPModel
 from base64 import b64decode
 from PIL import Image
-from .messages import ScoredMessage, ScorerMessage
+from .messages import ScoredMessage, ScorerMessage, TO_SCORER_ADDR, TO_TRAINER_ADDR
 
 
 def main():
@@ -11,10 +11,10 @@ def main():
     context = zmq.Context()
 
     receiver = context.socket(zmq.PULL)
-    receiver.bind("tcp://*:5558")
+    receiver.bind(TO_SCORER_ADDR)
 
     sender = context.socket(zmq.PUSH)
-    sender.bind("tcp://*:5559")
+    sender.bind(TO_TRAINER_ADDR)
 
     # Load model
     model_url = "openai/clip-vit-base-patch32"

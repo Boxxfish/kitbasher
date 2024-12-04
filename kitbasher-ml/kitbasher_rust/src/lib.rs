@@ -1,13 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
-
 use bevy::math::{Quat, Vec3};
 use kitbasher_game::engine::{Axis, Connection, Connector, KBEngine, PlacedConfig, AABB};
 use pyo3::prelude::*;
 use three_d::*;
-use winit::platform::{run_return::EventLoopExtRunReturn, wayland::EventLoopBuilderExtWayland};
+use serde::{Serialize, Deserialize};
 
 #[pyclass]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct PyVec3 {
     #[pyo3(get)]
     pub x: f32,
@@ -34,7 +32,7 @@ impl From<PyVec3> for Vec3 {
 }
 
 #[pyclass]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct PyQuat {
     #[pyo3(get)]
     pub x: f32,
@@ -64,7 +62,7 @@ impl From<PyQuat> for Quat {
 }
 
 #[pyclass(eq, eq_int)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PyAxis {
     X = 0,
     Y = 1,
@@ -92,7 +90,7 @@ impl From<PyAxis> for Axis {
 }
 
 #[pyclass]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct PyConnector {
     #[pyo3(get)]
     pub side_a: bool,
@@ -127,7 +125,7 @@ impl From<PyConnector> for Connector {
 }
 
 #[pyclass]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct PyAABB {
     #[pyo3(get)]
     pub center: PyVec3,
@@ -154,7 +152,7 @@ impl From<PyAABB> for AABB {
 }
 
 #[pyclass]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct PyConnection {
     #[pyo3(get)]
     pub placed_id: usize,
@@ -181,7 +179,7 @@ impl From<PyConnection> for Connection {
 }
 
 #[pyclass]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyPlacedConfig {
     #[pyo3(get)]
     pub position: PyVec3,
@@ -301,10 +299,10 @@ impl EngineWrapper {
 }
 
 #[pyclass(unsendable)]
-struct Renderer {
+pub struct Renderer {
     part_models: Vec<(CpuMesh, CpuMaterial)>,
     use_mirror: bool,
-    event_loop: winit::event_loop::EventLoop<()>,
+    pub event_loop: winit::event_loop::EventLoop<()>,
 }
 
 #[pymethods]
@@ -393,8 +391,21 @@ impl Renderer {
             .unwrap();
         let context =
             WindowedContext::from_winit_window(&window, SurfaceSettings::default()).unwrap();
+
+        self.render_model_with_window(&context, viewport, model)
+    }
+}
+
+impl Renderer {
+    /// Same as `render_model`, but it expects a window.
+    pub fn render_model_with_window(
+        &mut self,
+        context: &WindowedContext,
+        viewport: Viewport,
+        model: Vec<PyPlacedConfig>,
+    ) -> (Vec<u8>, Vec<u8>) {
         let mut render_tex = Texture2D::new_empty::<[u8; 4]>(
-            &context,
+            context,
             viewport.width,
             viewport.height,
             Interpolation::Nearest,
@@ -404,7 +415,7 @@ impl Renderer {
             Wrapping::ClampToEdge,
         );
         let mut depth_tex = DepthTexture2D::new::<f32>(
-            &context,
+            context,
             viewport.width,
             viewport.height,
             Wrapping::ClampToEdge,
@@ -438,16 +449,16 @@ impl Renderer {
 
             // Part model
             let mut model = Gm::new(
-                Mesh::new(&context, part_model),
-                PhysicalMaterial::new_opaque(&context, material),
+                Mesh::new(context, part_model),
+                PhysicalMaterial::new_opaque(context, material),
             );
             model.set_transformation(part_xform);
             models.push(model);
 
             // Outline
-            let mut outline_mat = PhysicalMaterial::new_opaque(&context, &outline_material);
+            let mut outline_mat = PhysicalMaterial::new_opaque(context, &outline_material);
             outline_mat.render_states.cull = Cull::Front;
-            let mut model = Gm::new(Mesh::new(&context, part_model), outline_mat);
+            let mut model = Gm::new(Mesh::new(context, part_model), outline_mat);
             model.set_transformation(part_xform * Matrix4::from_scale(1.1));
             models.push(model);
 
@@ -455,8 +466,8 @@ impl Renderer {
             if self.use_mirror {
                 let mirrored_xform = Matrix4::from_nonuniform_scale(-1., 1., 1.) * part_xform;
                 let mut model = Gm::new(
-                    Mesh::new(&context, part_model),
-                    PhysicalMaterial::new_opaque(&context, material),
+                    Mesh::new(context, part_model),
+                    PhysicalMaterial::new_opaque(context, material),
                 );
                 model.material.render_states.cull = Cull::None;
                 model.update_positions(
@@ -489,9 +500,9 @@ impl Renderer {
                 );
                 models.push(model);
 
-                let mut outline_mat = PhysicalMaterial::new_opaque(&context, &outline_material);
+                let mut outline_mat = PhysicalMaterial::new_opaque(context, &outline_material);
                 outline_mat.render_states.cull = Cull::Back;
-                let mut model = Gm::new(Mesh::new(&context, part_model), outline_mat);
+                let mut model = Gm::new(Mesh::new(context, part_model), outline_mat);
                 model.set_transformation(mirrored_xform * Matrix4::from_scale(1.1));
                 models.push(model);
             }
@@ -524,7 +535,7 @@ impl Renderer {
         let mut buffers = Vec::new();
         for offset in [vec3(80., 50., 100.), vec3(-100., 50., -80.)] {
             let eye = offset + model_center;
-            let directional = DirectionalLight::new(&context, 2.0, Srgba::WHITE, &(at - eye));
+            let directional = DirectionalLight::new(context, 2.0, Srgba::WHITE, &(at - eye));
             let camera = Camera::new_perspective(
                 viewport,
                 eye,
