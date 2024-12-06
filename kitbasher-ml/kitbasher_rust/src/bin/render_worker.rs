@@ -6,10 +6,14 @@ use three_d::{SurfaceSettings, Viewport, WindowedContext};
 
 #[derive(Parser)]
 struct Args {
+    #[arg(short, long)]
     part_paths: Vec<String>,
+    #[arg(short, long)]
     use_mirror: bool,
-    in_socket_addr: String,
-    out_socket_addr: String,
+    #[arg(short, long)]
+    in_socket_addr: u32,
+    #[arg(short, long)]
+    out_socket_addr: u32,
 }
 
 #[derive(Deserialize)]
@@ -17,7 +21,7 @@ struct RenderMessage {
     buffer_idx: u32,
     label_idx: u32,
     prompts: Vec<String>,
-    part_configs: Vec<PyPlacedConfig>,
+    part_configs: Vec<String>,
     scorer_fn: String,
 }
 
@@ -37,10 +41,14 @@ fn main() {
     let ctx = zmq::Context::new();
 
     let receiver = ctx.socket(zmq::PULL).unwrap();
-    receiver.bind(&args.in_socket_addr).unwrap();
+    receiver
+        .connect(&format!("tcp://localhost:{}", args.in_socket_addr))
+        .unwrap();
 
     let sender = ctx.socket(zmq::PUSH).unwrap();
-    sender.bind(&args.out_socket_addr).unwrap();
+    sender
+        .connect(&format!("tcp://localhost:{}", args.out_socket_addr))
+        .unwrap();
 
     // Set up rendering
     let mut renderer = Renderer::new(args.part_paths.clone(), args.use_mirror);
@@ -54,8 +62,15 @@ fn main() {
     loop {
         receiver.recv(&mut msg, 0).unwrap();
         let render_msg: RenderMessage = serde_json::from_str(msg.as_str().unwrap()).unwrap();
-        let img_buffers =
-            renderer.render_model_with_window(&context, viewport, render_msg.part_configs);
+        let img_buffers = renderer.render_model_with_window(
+            &context,
+            viewport,
+            render_msg
+                .part_configs
+                .iter()
+                .map(|s| PyPlacedConfig::from_json(s))
+                .collect(),
+        );
         let scorer_msg = ScorerMessage {
             buffer_idx: render_msg.buffer_idx,
             label_idx: render_msg.label_idx,

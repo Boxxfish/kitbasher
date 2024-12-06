@@ -1,20 +1,27 @@
 from io import BytesIO
+import numpy as np
 import zmq
 from transformers import CLIPProcessor, CLIPModel
 from base64 import b64decode
 from PIL import Image
-from .messages import ScoredMessage, ScorerMessage, TO_SCORER_ADDR, TO_TRAINER_ADDR
+from .messages import ScoredMessage, ScorerMessage
 
+from argparse import ArgumentParser
 
 def main():
+    parser = ArgumentParser()
+    parser.add_argument("--score-port-in", type=int)
+    parser.add_argument("--train-port-in", type=int)
+    args = parser.parse_args()
+
     # Set up sockets
     context = zmq.Context()
 
     receiver = context.socket(zmq.PULL)
-    receiver.bind(TO_SCORER_ADDR)
+    receiver.bind(f"tcp://*:{args.score_port_in}")
 
     sender = context.socket(zmq.PUSH)
-    sender.bind(TO_TRAINER_ADDR)
+    sender.connect(f"tcp://localhost:{args.train_port_in}")
 
     # Load model
     model_url = "openai/clip-vit-base-patch32"
@@ -26,7 +33,7 @@ def main():
         s = receiver.recv()
         scorer_msg = ScorerMessage.model_validate_json(s)
         images = [
-            Image.open(BytesIO(b64decode(img_b64))) for img_b64 in scorer_msg.images
+            np.array(list(b64decode(img_b64))).reshape([512, 512, 4])[::-1, :, :3] for img_b64 in scorer_msg.images
         ]
 
         # Score renders
@@ -56,7 +63,7 @@ def main():
         sender.send_json(
             ScoredMessage(
                 buffer_idx=scorer_msg.buffer_idx, score=score
-            ).model_dump_json()
+            ).model_dump()
         )
 
 

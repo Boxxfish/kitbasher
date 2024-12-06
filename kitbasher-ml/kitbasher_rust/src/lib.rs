@@ -195,6 +195,18 @@ pub struct PyPlacedConfig {
     pub connections: Vec<Option<PyConnection>>,
 }
 
+#[pymethods]
+impl PyPlacedConfig {
+    pub fn to_json(&self) -> String {
+        serde_json::ser::to_string(self).unwrap()
+    }
+
+    #[staticmethod]
+    pub fn from_json(s: &str) -> PyPlacedConfig {
+        serde_json::de::from_str(s).unwrap()
+    }
+}
+
 impl From<PlacedConfig> for PyPlacedConfig {
     fn from(value: PlacedConfig) -> Self {
         Self {
