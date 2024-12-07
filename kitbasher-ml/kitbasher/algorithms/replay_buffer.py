@@ -31,6 +31,7 @@ class ReplayBuffer:
         self.rewards = torch.zeros([capacity], dtype=k, device=d, requires_grad=False)
         # Technically this is the "terminated" flag
         self.dones = torch.zeros([capacity], dtype=k, device=d, requires_grad=False)
+        self.readys = torch.zeros([capacity], dtype=torch.bool, device=d, requires_grad=False)
         self.filled = False
 
     def insert_step(
@@ -40,6 +41,7 @@ class ReplayBuffer:
         actions: torch.Tensor,
         rewards: List[float],
         dones: List[bool],
+        readys: List[bool],
     ):
         """
         Inserts a transition from each environment into the buffer. Make sure
@@ -63,6 +65,9 @@ class ReplayBuffer:
             self.dones.index_copy_(
                 0, indices, torch.tensor(dones, dtype=torch.float, device=d)
             )
+            self.readys.index_copy_(
+                0, indices, torch.tensor(readys, dtype=torch.bool, device=d)
+            )
         self.next = (self.next + batch_size) % self.capacity
         if self.next == 0:
             self.filled = True
@@ -80,11 +85,9 @@ class ReplayBuffer:
         Generates minibatches of experience.
         """
         with torch.no_grad():
-            indices = torch.randint(
-                self.capacity,
-                [batch_size],
-                dtype=torch.int,
-            )
+            indices = torch.arange(0, self.capacity)
+            indices = indices[self.readys]
+            indices = indices[torch.randperm(indices.shape[0])][:batch_size]
             rand_states = []
             rand_next_states = []
             for i in indices:

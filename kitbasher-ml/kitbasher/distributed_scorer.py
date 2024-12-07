@@ -1,3 +1,4 @@
+import time
 from kitbasher_rust import PyPlacedConfig
 import torch
 import zmq
@@ -29,6 +30,7 @@ class DistributedScorer:
         train_port_in: int = 5559,
     ) -> None:
         self.max_queued_items = max_queued_items
+        self.num_queued_items = 0
         self.prompts = prompts
 
         # Set up sockets
@@ -39,6 +41,7 @@ class DistributedScorer:
 
         self.receiver = context.socket(zmq.PULL)
         self.receiver.bind(f"tcp://*:{train_port_in}")
+        self.receiver.RCVTIMEO = 10 # If a message isn't present within this time, break 
 
         # Launch render workers and scorer
         self.scorer_proc = subprocess.Popen(
@@ -75,11 +78,24 @@ class DistributedScorer:
                 scorer_fn="contrastive_clip",
             ).model_dump()
         )
+        self.num_queued_items += 1
 
     def update(self, buffer: ReplayBuffer):
         """Checks for items in the queue and updates the buffer."""
-        scored_msg = ScoredMessage.model_validate(self.receiver.recv_json())
-        print("Score:", scored_msg.score)
+        need_fill = self.num_queued_items == self.max_queued_items
+        while True:
+            try:
+                scored_msg = ScoredMessage.model_validate(self.receiver.recv_json())
+                buffer.readys[scored_msg.buffer_idx] = True
+                buffer.rewards[scored_msg.buffer_idx] = scored_msg.score
+                self.num_queued_items -= 1
+            except zmq.Again:
+                # If we've hit the max for queued items, keep polling until we catch up.
+                # Otherwise, exit the loop to prevent blocking.
+                if need_fill and self.num_queued_items > 0:
+                    pass
+                else:
+                    break
 
     def destroy(self):
         self.scorer_proc.kill()
@@ -87,6 +103,7 @@ class DistributedScorer:
             render_proc.kill()
 
 
+# Small test
 if __name__ == "__main__":
     use_mirror = True
     steps = 16
@@ -102,7 +119,10 @@ if __name__ == "__main__":
     env.reset()
     for _ in range(steps):
         env.step(len(env.model))
-    scorer = DistributedScorer(8, BLOCK_PARTS, use_mirror, prompts)
-    scorer.push_model(env.model, 0)
-    scorer.update(buffer)
+    scorer = DistributedScorer(4, BLOCK_PARTS, use_mirror, prompts)
+    for i in range(8):
+        scorer.push_model(env.model, i)
+        time.sleep(0.01) # Simulate delay
+        scorer.update(buffer)
     scorer.destroy()
+    print(buffer.rewards)
