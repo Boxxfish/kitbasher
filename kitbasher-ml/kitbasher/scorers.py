@@ -5,7 +5,66 @@ from torch_geometric.data import Data
 
 from kitbasher_rust import EngineWrapper, PyPlacedConfig
 
+from kitbasher.distributed_scorer import DistributedScorer, DummyDistributedScorer
 from kitbasher.env import ConstructionEnv
+
+
+def get_scorer_fn(
+    score_fn_name: str,
+    distr_scorer: bool,
+    max_queued_items: int,
+    use_mirror: bool,
+    prompts: list[str],
+    num_render_workers: bool,
+) -> Tuple[Any, Any, Callable[[], DistributedScorer]]:
+    if score_fn_name == "volume":
+        score_fn = volume_fill_scorer
+        start_fn = single_start
+        scorer = lambda: DummyDistributedScorer()
+    elif score_fn_name == "connect":
+        score_fn = connect_scorer
+        start_fn = connect_start
+        scorer = lambda: DummyDistributedScorer()
+    elif score_fn_name == "clip":
+        if distr_scorer:
+            score_fn = dummy_scorer
+            start_fn = single_start
+            scorer = lambda: DistributedScorer(
+                max_queued_items=max_queued_items,
+                use_mirror=use_mirror,
+                prompts=prompts,
+                num_render_workers=num_render_workers,
+                score_fn=score_fn_name,
+            )
+        else:
+            score_fn = create_clip_scorer()
+            start_fn = single_start
+            scorer = lambda: DummyDistributedScorer()
+    elif score_fn_name == "contrastive_clip":
+        if distr_scorer:
+            score_fn = dummy_scorer
+            start_fn = single_start
+            scorer = lambda: DistributedScorer(
+                max_queued_items=max_queued_items,
+                use_mirror=use_mirror,
+                prompts=prompts,
+                num_render_workers=num_render_workers,
+                score_fn=score_fn_name,
+            )
+        else:
+            score_fn = create_contrastive_clip_scorer()
+            start_fn = single_start
+            scorer = lambda: DummyDistributedScorer()
+    else:
+        raise NotImplementedError(f"Invalid score function, got {score_fn_name}")
+    return score_fn, start_fn, scorer
+
+
+def dummy_scorer(
+    model: List[PyPlacedConfig], data: Data, env: ConstructionEnv, is_done: bool
+) -> tuple[float, bool]:
+    return 0.0, False
+
 
 def single_start(engine: EngineWrapper):
     config = engine.create_config(5, 0, 0, 0)
@@ -123,6 +182,7 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
         return score, False
 
     return clip_scorer
+
 
 def create_contrastive_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
     from transformers import CLIPProcessor, CLIPModel

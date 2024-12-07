@@ -16,6 +16,8 @@ class DistributedScorer:
     """
     Allows for distributed scoring of models. Once a model is scored, it will be rendered and scored in a different
     process, and the score in the experience buffer will be updated.
+
+    If an exception is raised and this is used as a context manager, workers will automatically be killed.
     """
 
     def __init__(
@@ -24,6 +26,7 @@ class DistributedScorer:
         part_paths: list[str],
         use_mirror: bool,
         prompts: list[str],
+        scorer_fn: str,
         num_render_workers: int = 2,
         train_port_out: int = 5557,
         score_port_in: int = 5558,
@@ -32,6 +35,7 @@ class DistributedScorer:
         self.max_queued_items = max_queued_items
         self.num_queued_items = 0
         self.prompts = prompts
+        self.scorer_fn = scorer_fn
 
         # Set up sockets
         context = zmq.Context()
@@ -67,15 +71,15 @@ class DistributedScorer:
             render_proc = subprocess.Popen(args)
             self.render_procs.append(render_proc)
 
-    def push_model(self, model: list[PyPlacedConfig], buffer_idx: int):
+    def push_model(self, model: list[PyPlacedConfig], buffer_idx: int, label_idx: int):
         """Sends a model to be rendered and scored."""
         self.sender.send_json(
             RenderMessage(
                 buffer_idx=buffer_idx,
-                label_idx=1,
+                label_idx=label_idx,
                 part_configs=[part_config.to_json() for part_config in model],
                 prompts=self.prompts,
-                scorer_fn="contrastive_clip",
+                scorer_fn=self.scorer_fn,
             ).model_dump()
         )
         self.num_queued_items += 1
@@ -102,6 +106,34 @@ class DistributedScorer:
         for render_proc in self.render_procs:
             render_proc.kill()
 
+    def __enter__(self) -> "DistributedScorer":
+        return self
+
+    def __exit__(self, type, value, traceback):
+        try:
+            pass
+        except Exception as e:
+            raise e
+        finally:
+            self.destroy()
+
+class DummyDistributedScorer:
+    """No-op version of `DistributedScorer`."""
+
+    def push_model(self, model: list[PyPlacedConfig], buffer_idx: int, label_idx: int):
+        pass
+
+    def update(self, buffer: ReplayBuffer):
+        pass
+
+    def destroy(self):
+        pass
+
+    def __enter__(self) -> "DummyDistributedScorer":
+        return self
+    
+    def __exit__(self, type, value, traceback):
+        pass
 
 # Small test
 if __name__ == "__main__":
@@ -119,10 +151,9 @@ if __name__ == "__main__":
     env.reset()
     for _ in range(steps):
         env.step(len(env.model))
-    scorer = DistributedScorer(4, BLOCK_PARTS, use_mirror, prompts)
-    for i in range(8):
-        scorer.push_model(env.model, i)
-        time.sleep(0.01) # Simulate delay
-        scorer.update(buffer)
-    scorer.destroy()
-    print(buffer.rewards)
+    with DistributedScorer(4, BLOCK_PARTS, use_mirror, prompts) as scorer:
+        for i in range(8):
+            scorer.push_model(env.model, i)
+            time.sleep(0.01) # Simulate delay
+            scorer.update(buffer)
+        print("Rewards in buffer:", buffer.rewards.tolist())
