@@ -1,4 +1,5 @@
 import time
+from typing import *
 from kitbasher_rust import PyPlacedConfig
 import torch
 import zmq
@@ -9,8 +10,7 @@ import gymnasium as gym
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
 from kitbasher.batch_scoring.messages import RenderMessage, ScoredMessage
 from kitbasher.env import BLOCK_PARTS, ConstructionEnv
-from kitbasher.scorers import single_start, volume_fill_scorer
-
+from kitbasher.scorers import connect_scorer, connect_start, create_clip_scorer, create_contrastive_clip_scorer, dummy_scorer, single_start, volume_fill_scorer
 
 class DistributedScorer:
     """
@@ -134,6 +134,59 @@ class DummyDistributedScorer:
     
     def __exit__(self, type, value, traceback):
         pass
+
+def get_scorer_fn(
+    score_fn_name: str,
+    distr_scorer: bool,
+    max_queued_items: int,
+    use_mirror: bool,
+    prompts: list[str],
+    num_render_workers: int,
+    part_paths: list[str],
+) -> Tuple[Any, Any, Callable[[], DistributedScorer]]:
+    if score_fn_name == "volume":
+        score_fn = volume_fill_scorer
+        start_fn = single_start
+        scorer = lambda: DummyDistributedScorer()
+    elif score_fn_name == "connect":
+        score_fn = connect_scorer
+        start_fn = connect_start
+        scorer = lambda: DummyDistributedScorer()
+    elif score_fn_name == "clip":
+        if distr_scorer:
+            score_fn = dummy_scorer
+            start_fn = single_start
+            scorer = lambda: DistributedScorer(
+                max_queued_items=max_queued_items,
+                use_mirror=use_mirror,
+                prompts=prompts,
+                num_render_workers=num_render_workers,
+                scorer_fn=score_fn_name,
+                part_paths=part_paths,
+            )
+        else:
+            score_fn = create_clip_scorer()
+            start_fn = single_start
+            scorer = lambda: DummyDistributedScorer()
+    elif score_fn_name == "contrastive_clip":
+        if distr_scorer:
+            score_fn = dummy_scorer
+            start_fn = single_start
+            scorer = lambda: DistributedScorer(
+                max_queued_items=max_queued_items,
+                use_mirror=use_mirror,
+                prompts=prompts,
+                num_render_workers=num_render_workers,
+                scorer_fn=score_fn_name,
+                part_paths=part_paths,
+            )
+        else:
+            score_fn = create_contrastive_clip_scorer()
+            start_fn = single_start
+            scorer = lambda: DummyDistributedScorer()
+    else:
+        raise NotImplementedError(f"Invalid score function, got {score_fn_name}")
+    return score_fn, start_fn, scorer
 
 # Small test
 if __name__ == "__main__":

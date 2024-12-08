@@ -26,16 +26,10 @@ from safetensors.torch import save_model, load_model
 
 from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
-from kitbasher.env import ConstructionEnv
+from kitbasher.env import BLOCK_PARTS, ConstructionEnv
 from kitbasher.pretraining import FeatureExtractor, Pretrained
-from kitbasher.scorers import (
-    connect_scorer,
-    connect_start,
-    create_clip_scorer,
-    create_contrastive_clip_scorer,
+from kitbasher.distributed_scorer import (
     get_scorer_fn,
-    single_start,
-    volume_fill_scorer,
 )
 from kitbasher.utils import create_directory, parse_args
 from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
@@ -105,6 +99,7 @@ class Config(BaseModel):
     single_class: str = ""
     distr_scorer: bool = False
     max_queued_items: int = 8
+    num_render_workers: int = 2
     device: str = "cuda"
 
 
@@ -274,6 +269,8 @@ if __name__ == "__main__":
         max_queued_items=cfg.max_queued_items,
         use_mirror=cfg.use_mirror,
         prompts=prompts,
+        num_render_workers=cfg.num_render_workers,
+        part_paths=[path.replace(".ron", ".glb") for path in BLOCK_PARTS]
     )
     with scorer_manager() as scorer:
         env = ConstructionEnv(
