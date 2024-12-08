@@ -263,7 +263,7 @@ if __name__ == "__main__":
     if cfg.single_class:
         labels = [cfg.single_class]
     prompts = [cfg.prompt + l for l in labels]
-    score_fn, start_fn, scorer_manager = get_scorer_fn(
+    score_fn, eval_score_fn, start_fn, scorer_manager = get_scorer_fn(
         score_fn_name=cfg.score_fn,
         distr_scorer=cfg.distr_scorer,
         max_queued_items=cfg.max_queued_items,
@@ -283,7 +283,7 @@ if __name__ == "__main__":
             use_mirror=cfg.use_mirror,
         )
         test_env = ConstructionEnv(
-            score_fn=score_fn,
+            score_fn=eval_score_fn,
             start_fn=start_fn,
             max_actions_per_step=cfg.max_actions_per_step,
             use_potential=cfg.use_potential,

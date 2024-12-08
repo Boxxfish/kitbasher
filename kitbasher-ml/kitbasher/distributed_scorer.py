@@ -143,18 +143,21 @@ def get_scorer_fn(
     prompts: list[str],
     num_render_workers: int,
     part_paths: list[str],
-) -> Tuple[Any, Any, Callable[[], DistributedScorer]]:
+) -> Tuple[Any, Any, Any, Callable[[], DistributedScorer]]:
     if score_fn_name == "volume":
         score_fn = volume_fill_scorer
+        eval_score_fn = score_fn
         start_fn = single_start
         scorer = lambda: DummyDistributedScorer()
     elif score_fn_name == "connect":
         score_fn = connect_scorer
+        eval_score_fn = score_fn
         start_fn = connect_start
         scorer = lambda: DummyDistributedScorer()
     elif score_fn_name == "clip":
         if distr_scorer:
             score_fn = dummy_scorer
+            eval_score_fn = create_clip_scorer()
             start_fn = single_start
             scorer = lambda: DistributedScorer(
                 max_queued_items=max_queued_items,
@@ -166,11 +169,13 @@ def get_scorer_fn(
             )
         else:
             score_fn = create_clip_scorer()
+            eval_score_fn = score_fn
             start_fn = single_start
             scorer = lambda: DummyDistributedScorer()
     elif score_fn_name == "contrastive_clip":
         if distr_scorer:
             score_fn = dummy_scorer
+            eval_score_fn = create_contrastive_clip_scorer()
             start_fn = single_start
             scorer = lambda: DistributedScorer(
                 max_queued_items=max_queued_items,
@@ -182,11 +187,12 @@ def get_scorer_fn(
             )
         else:
             score_fn = create_contrastive_clip_scorer()
+            eval_score_fn = score_fn
             start_fn = single_start
             scorer = lambda: DummyDistributedScorer()
     else:
         raise NotImplementedError(f"Invalid score function, got {score_fn_name}")
-    return score_fn, start_fn, scorer
+    return score_fn, eval_score_fn, start_fn, scorer
 
 # Small test
 if __name__ == "__main__":
