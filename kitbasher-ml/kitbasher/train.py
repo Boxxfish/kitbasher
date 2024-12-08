@@ -364,19 +364,21 @@ if __name__ == "__main__":
 
                     next_obs = process_obs(obs_)
                     next_mask = process_act_masks(obs_)
-                    scorer.push_model(env.model, buffer.next, env.label_idx)
-                    scorer.update(buffer)
                     buffer.insert_step(
                         [obs.to_data_list()[0]],
                         [next_obs.to_data_list()[0]],
                         torch.tensor([action]),
                         [reward],
                         [done],
-                        [True if not cfg.distr_scorer else not done]
+                        [True if not cfg.distr_scorer else not (done or trunc)]
                     )
+                    scorer.update(buffer)
                     obs = next_obs
                     mask = next_mask
                     if done or trunc:
+                        # Send model to be scored (may be a no-op)
+                        scorer.push_model(env.model, buffer.next, env.label_idx)
+
                         obs_, info = env.reset()
                         obs = process_obs(obs_)
                         mask = process_act_masks(obs_)

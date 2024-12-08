@@ -45,7 +45,7 @@ class DistributedScorer:
 
         self.receiver = context.socket(zmq.PULL)
         self.receiver.bind(f"tcp://*:{train_port_in}")
-        self.receiver.RCVTIMEO = 10 # If a message isn't present within this time, break 
+        self.receiver.RCVTIMEO = 0 # If a message isn't present within this time, break 
 
         # Launch render workers and scorer
         self.scorer_proc = subprocess.Popen(
@@ -204,9 +204,9 @@ if __name__ == "__main__":
     env.reset()
     for _ in range(steps):
         env.step(len(env.model))
-    with DistributedScorer(4, BLOCK_PARTS, use_mirror, prompts) as scorer:
+    with DistributedScorer(4, BLOCK_PARTS, use_mirror, prompts, "clip") as scorer:
         for i in range(8):
-            scorer.push_model(env.model, i)
+            scorer.push_model(env.model, i, 0)
             time.sleep(0.01) # Simulate delay
             scorer.update(buffer)
         print("Rewards in buffer:", buffer.rewards.tolist())
