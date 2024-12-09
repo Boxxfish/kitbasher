@@ -27,6 +27,8 @@ class DistributedScorer:
         use_mirror: bool,
         prompts: list[str],
         scorer_fn: str,
+        norm_min: float,
+        norm_max: float,
         num_render_workers: int = 2,
         train_port_out: int = 5557,
         score_port_in: int = 5558,
@@ -36,6 +38,8 @@ class DistributedScorer:
         self.num_queued_items = 0
         self.prompts = prompts
         self.scorer_fn = scorer_fn
+        self.norm_max = norm_max
+        self.norm_min = norm_min
 
         # Set up sockets
         context = zmq.Context()
@@ -91,7 +95,7 @@ class DistributedScorer:
             try:
                 scored_msg = ScoredMessage.model_validate(self.receiver.recv_json())
                 buffer.readys[scored_msg.buffer_idx] = True
-                buffer.rewards[scored_msg.buffer_idx] = scored_msg.score
+                buffer.rewards[scored_msg.buffer_idx] = (scored_msg.score - self.norm_min) / (self.norm_max - self.norm_min)
                 self.num_queued_items -= 1
             except zmq.Again:
                 # If we've hit the max for queued items, keep polling until we catch up.
@@ -143,6 +147,8 @@ def get_scorer_fn(
     prompts: list[str],
     num_render_workers: int,
     part_paths: list[str],
+    norm_min: float,
+    norm_max: float,
 ) -> Tuple[Any, Any, Any, Callable[[], DistributedScorer]]:
     if score_fn_name == "volume":
         score_fn = volume_fill_scorer
@@ -166,6 +172,8 @@ def get_scorer_fn(
                 num_render_workers=num_render_workers,
                 scorer_fn=score_fn_name,
                 part_paths=part_paths,
+                norm_min=norm_max,
+                norm_min=norm_min,
             )
         else:
             score_fn = create_clip_scorer()
@@ -184,6 +192,8 @@ def get_scorer_fn(
                 num_render_workers=num_render_workers,
                 scorer_fn=score_fn_name,
                 part_paths=part_paths,
+                norm_min=norm_max,
+                norm_min=norm_min,
             )
         else:
             score_fn = create_contrastive_clip_scorer()
