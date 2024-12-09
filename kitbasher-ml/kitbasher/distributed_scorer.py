@@ -172,7 +172,7 @@ def get_scorer_fn(
                 num_render_workers=num_render_workers,
                 scorer_fn=score_fn_name,
                 part_paths=part_paths,
-                norm_min=norm_max,
+                norm_max=norm_max,
                 norm_min=norm_min,
             )
         else:
@@ -192,7 +192,7 @@ def get_scorer_fn(
                 num_render_workers=num_render_workers,
                 scorer_fn=score_fn_name,
                 part_paths=part_paths,
-                norm_min=norm_max,
+                norm_max=norm_max,
                 norm_min=norm_min,
             )
         else:
