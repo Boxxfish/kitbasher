@@ -273,6 +273,7 @@ if __name__ == "__main__":
         part_paths=[path.replace(".ron", ".glb") for path in BLOCK_PARTS],
         norm_min=cfg.norm_min,
         norm_max=cfg.norm_max,
+        use_potential=cfg.use_potential,
     )
     with scorer_manager() as scorer:
         env = ConstructionEnv(
@@ -373,15 +374,23 @@ if __name__ == "__main__":
                         torch.tensor([action]),
                         [reward],
                         [done],
-                        [True if not cfg.distr_scorer else not (done or trunc)]
+                        [
+                            (
+                                True
+                                if not cfg.distr_scorer
+                                else ((not cfg.use_potential) and (not (done or trunc)))
+                            )
+                        ],
                     )
                     scorer.update(buffer)
+                    
+                    # Send model to be scored (may be a no-op)
+                    if cfg.use_potential or (done or trunc):
+                        scorer.push_model(env.model, inserted_idx, env.label_idx)
+
                     obs = next_obs
                     mask = next_mask
                     if done or trunc:
-                        # Send model to be scored (may be a no-op)
-                        scorer.push_model(env.model, inserted_idx, env.label_idx)
-
                         obs_, info = env.reset()
                         obs = process_obs(obs_)
                         mask = process_act_masks(obs_)

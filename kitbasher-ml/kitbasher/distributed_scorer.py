@@ -29,6 +29,7 @@ class DistributedScorer:
         scorer_fn: str,
         norm_min: float,
         norm_max: float,
+        use_potential: bool,
         num_render_workers: int = 2,
         train_port_out: int = 5557,
         score_port_in: int = 5558,
@@ -40,6 +41,7 @@ class DistributedScorer:
         self.scorer_fn = scorer_fn
         self.norm_max = norm_max
         self.norm_min = norm_min
+        self.use_potential = use_potential
 
         # Set up sockets
         context = zmq.Context()
@@ -94,8 +96,29 @@ class DistributedScorer:
         while True:
             try:
                 scored_msg = ScoredMessage.model_validate(self.receiver.recv_json())
-                buffer.readys[scored_msg.buffer_idx] = True
-                buffer.rewards[scored_msg.buffer_idx] = (scored_msg.score - self.norm_min) / (self.norm_max - self.norm_min)
+                norm_score = (scored_msg.score - self.norm_min) / (self.norm_max - self.norm_min)
+                if self.use_potential:
+                    prev_idx = (scored_msg.buffer_idx - 1) % buffer.capacity
+                    next_idx = (scored_msg.buffer_idx + 1) % buffer.capacity
+
+                    # If previous transition is not term and a score exists, set the reward
+                    if not buffer.dones[prev_idx]:
+                        if buffer.scores[prev_idx] > 0.0:
+                            buffer.rewards[scored_msg.buffer_idx] = norm_score - buffer.scores[prev_idx]
+                            buffer.readys[scored_msg.buffer_idx] = True
+                    # If previous transition is term, just use this as the score
+                    else:
+                        buffer.rewards[scored_msg.buffer_idx] = norm_score
+                        buffer.readys[scored_msg.buffer_idx] = True
+
+                    # If this transition is not term and a score exists for the next transition, set its reward
+                    if (not buffer.readys[next_idx]) and (not buffer.dones[scored_msg.buffer_idx]) and buffer.scores[next_idx] > 0.0:
+                        buffer.rewards[next_idx] = buffer.scores[next_idx] - norm_score
+                        buffer.readys[next_idx] = True
+                else:
+                    buffer.rewards[scored_msg.buffer_idx] = norm_score
+                    buffer.readys[scored_msg.buffer_idx] = True
+                buffer.scores[scored_msg.buffer_idx] = norm_score
                 self.num_queued_items -= 1
             except zmq.Again:
                 # If we've hit the max for queued items, keep polling until we catch up.
@@ -149,6 +172,7 @@ def get_scorer_fn(
     part_paths: list[str],
     norm_min: float,
     norm_max: float,
+    use_potential: bool,
 ) -> Tuple[Any, Any, Any, Callable[[], DistributedScorer]]:
     if score_fn_name == "volume":
         score_fn = volume_fill_scorer
@@ -174,6 +198,7 @@ def get_scorer_fn(
                 part_paths=part_paths,
                 norm_max=norm_max,
                 norm_min=norm_min,
+                use_potential=use_potential,
             )
         else:
             score_fn = create_clip_scorer()
@@ -194,6 +219,7 @@ def get_scorer_fn(
                 part_paths=part_paths,
                 norm_max=norm_max,
                 norm_min=norm_min,
+                use_potential=use_potential,
             )
         else:
             score_fn = create_contrastive_clip_scorer()

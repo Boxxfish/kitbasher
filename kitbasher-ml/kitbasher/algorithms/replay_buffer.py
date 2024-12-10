@@ -29,6 +29,7 @@ class ReplayBuffer:
             action_shape, dtype=torch.int64, device=d, requires_grad=False
         )
         self.rewards = torch.zeros([capacity], dtype=k, device=d, requires_grad=False)
+        self.scores = torch.zeros([capacity], dtype=k, device=d, requires_grad=False)
         # Technically this is the "terminated" flag
         self.dones = torch.zeros([capacity], dtype=k, device=d, requires_grad=False)
         self.readys = torch.zeros([capacity], dtype=torch.bool, device=d, requires_grad=False)
