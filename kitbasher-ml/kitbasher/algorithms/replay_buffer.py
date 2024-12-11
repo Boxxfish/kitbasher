@@ -63,6 +63,9 @@ class ReplayBuffer:
             self.rewards.index_copy_(
                 0, indices, torch.tensor(rewards, dtype=torch.float, device=d)
             )
+            self.scores.index_copy_(
+                0, indices, torch.tensor([0.0] * batch_size, dtype=torch.float, device=d)
+            )
             self.dones.index_copy_(
                 0, indices, torch.tensor(dones, dtype=torch.float, device=d)
             )
