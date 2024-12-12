@@ -96,7 +96,7 @@ class Config(BaseModel):
     fe_path: str = ""
     freeze_fe: bool = False
     freeze_fe_for: int = -1
-    single_class: str = ""
+    single_class: str = "" # This can be a comma separated list too
     distr_scorer: bool = False
     max_queued_items: int = 8
     num_render_workers: int = 2
@@ -261,7 +261,7 @@ if __name__ == "__main__":
 
     labels = LABELS
     if cfg.single_class:
-        labels = [cfg.single_class]
+        labels = [c.strip() for c in cfg.single_class.split(",")]
     prompts = [cfg.prompt + l for l in labels]
     score_fn, eval_score_fn, start_fn, scorer_manager = get_scorer_fn(
         score_fn_name=cfg.score_fn,
