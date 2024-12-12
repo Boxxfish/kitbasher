@@ -427,7 +427,7 @@ if __name__ == "__main__":
                         obs_, _ = test_env.reset()
                         eval_obs = process_obs(obs_)
                         eval_mask = process_act_masks(obs_)
-                        for _ in range(cfg.eval_steps):
+                        for eval_run_id in range(cfg.eval_steps):
                             steps_taken = 0
                             episode_reward = 0.0
                             for _ in range(cfg.max_eval_steps):
@@ -440,6 +440,8 @@ if __name__ == "__main__":
                                 reward_total += reward
                                 episode_reward += reward
                                 if done or trunc:
+                                    log_dict.update({f"eval_img_{eval_run_id}": wandb.Image(env.screenshot()[0], caption=env.prompt)})
+
                                     obs_, info = test_env.reset()
                                     eval_obs = process_obs(obs_)
                                     eval_mask = process_act_masks(obs_)
