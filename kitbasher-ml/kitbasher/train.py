@@ -441,7 +441,7 @@ if __name__ == "__main__":
                                 reward_total += reward
                                 episode_reward += reward
                                 if done or trunc:
-                                    images[test_env.prompt].append(test_env.screenshot()[0])
+                                    images[test_env.prompt].append((episode_reward, test_env.screenshot()[0]))
 
                                     obs_, info = test_env.reset()
                                     eval_obs = process_obs(obs_)
@@ -456,7 +456,7 @@ if __name__ == "__main__":
                             "eval_min_reward": min_reward_total,
                             "avg_eval_episode_predicted_reward": pred_reward_total
                             / cfg.eval_steps,
-                            "eval_images": sum([[wandb.Image(img, caption=k) for img in imgs] for k, imgs in images.items() if len(imgs) > 0], [])
+                            "eval_images": sum([[wandb.Image(img, caption=f"{k}: {score}") for (score, img) in imgs] for k, imgs in images.items() if len(imgs) > 0], [])
                         }
                     )
 
