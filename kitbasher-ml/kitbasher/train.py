@@ -100,6 +100,8 @@ class Config(BaseModel):
     distr_scorer: bool = False
     max_queued_items: int = 8
     num_render_workers: int = 2
+    part_emb_size: int = 32
+    hidden_dim: int = 64
     device: str = "cuda"
 
 
@@ -312,17 +314,17 @@ if __name__ == "__main__":
                 meta.cfg.part_emb_size,
                 meta.cfg.num_steps,
                 obs_space.node_space.shape[0],
-                64,
+                cfg.hidden_dim,
                 clip_dim,
             )
             load_model(pretrained, cfg.fe_path)
             feature_extractor = pretrained.feature_extractor
         q_net = QNet(
             env.num_parts,
-            32,
+            cfg.part_emb_size,
             cfg.process_layers,
             obs_space.node_space.shape[0],
-            64,
+            cfg.hidden_dim,
             cfg.process_type,
             tanh_logit=cfg.tanh_logit,
             no_advantage=cfg.no_advantage,
