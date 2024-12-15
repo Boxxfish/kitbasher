@@ -10,7 +10,7 @@ packages = [{include = "kitbasher"}]
 python = "~3.9"
 torch = "2.0.0"
 tqdm = "^4.65.0"
-wandb = "^0.15.3"
+wandb = {extras = ["media"], version = "^0.19.0"}
 gymnasium = "^0.28.1"
 envpool = "^0.8.2"
 types-tqdm = "^4.65.0.1"
@@ -24,6 +24,7 @@ pandas = "^2.2.2"
 matplotlib = "^3.9.2"
 transformers = "^4.45.1"
 pydantic = "^2.9.2"
+pyzmq = "^26.2.0"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -26,9 +26,11 @@ from safetensors.torch import save_model, load_model
 
 from kitbasher.algorithms.dqn import train_dqn
 from kitbasher.algorithms.replay_buffer import ReplayBuffer
-from kitbasher.env import ConstructionEnv
+from kitbasher.env import BLOCK_PARTS, ConstructionEnv
 from kitbasher.pretraining import FeatureExtractor, Pretrained
-from kitbasher.scorers import connect_scorer, connect_start, create_clip_scorer, create_contrastive_clip_scorer, single_start, volume_fill_scorer
+from kitbasher.distributed_scorer import (
+    get_scorer_fn,
+)
 from kitbasher.utils import create_directory, parse_args
 from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 
@@ -94,7 +96,10 @@ class Config(BaseModel):
     fe_path: str = ""
     freeze_fe: bool = False
     freeze_fe_for: int = -1
-    single_class: str = ""
+    single_class: str = "" # This can be a comma separated list too
+    distr_scorer: bool = False
+    max_queued_items: int = 8
+    num_render_workers: int = 2
     device: str = "cuda"
 
 
@@ -254,203 +259,220 @@ if __name__ == "__main__":
     # Create out directory
     chkpt_path = create_directory(cfg.out_dir, ExpMeta(args=cfg))
 
-    if cfg.score_fn == "volume":
-        score_fn = volume_fill_scorer
-        start_fn = single_start
-    elif cfg.score_fn == "connect":
-        score_fn = connect_scorer
-        start_fn = connect_start
-    elif cfg.score_fn == "clip":
-        score_fn = create_clip_scorer()
-        start_fn = single_start
-    elif cfg.score_fn == "contrastive_clip":
-        score_fn = create_contrastive_clip_scorer()
-        start_fn = single_start
-    else:
-        raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     labels = LABELS
     if cfg.single_class:
-        labels = [cfg.single_class]
+        labels = [c.strip() for c in cfg.single_class.split(",")]
     prompts = [cfg.prompt + l for l in labels]
-    env = ConstructionEnv(
-        score_fn=score_fn,
-        start_fn=start_fn,
-        max_actions_per_step=cfg.max_actions_per_step,
-        use_potential=cfg.use_potential,
-        max_steps=cfg.max_steps,
-        prompts=prompts,
+    score_fn, eval_score_fn, start_fn, scorer_manager = get_scorer_fn(
+        score_fn_name=cfg.score_fn,
+        distr_scorer=cfg.distr_scorer,
+        max_queued_items=cfg.max_queued_items,
         use_mirror=cfg.use_mirror,
-    )
-    test_env = ConstructionEnv(
-        score_fn=score_fn,
-        start_fn=start_fn,
-        max_actions_per_step=cfg.max_actions_per_step,
-        use_potential=cfg.use_potential,
-        max_steps=cfg.max_steps,
         prompts=prompts,
-        use_mirror=cfg.use_mirror,
+        num_render_workers=cfg.num_render_workers,
+        part_paths=[path.replace(".ron", ".glb") for path in BLOCK_PARTS],
+        norm_min=cfg.norm_min,
+        norm_max=cfg.norm_max,
+        use_potential=cfg.use_potential,
     )
+    with scorer_manager() as scorer:
+        env = ConstructionEnv(
+            score_fn=score_fn,
+            start_fn=start_fn,
+            max_actions_per_step=cfg.max_actions_per_step,
+            use_potential=cfg.use_potential,
+            max_steps=cfg.max_steps,
+            prompts=prompts,
+            use_mirror=cfg.use_mirror,
+        )
+        test_env = ConstructionEnv(
+            score_fn=eval_score_fn,
+            start_fn=start_fn,
+            max_actions_per_step=cfg.max_actions_per_step,
+            use_potential=cfg.use_potential,
+            max_steps=cfg.max_steps,
+            prompts=prompts,
+            use_mirror=cfg.use_mirror,
+        )
 
-    # Initialize Q network
-    obs_space = env.observation_space
-    act_space = env.action_space
-    assert isinstance(obs_space, gym.spaces.Graph)
-    assert isinstance(obs_space.node_space, gym.spaces.Box)
-    assert isinstance(act_space, gym.spaces.Discrete)
-    feature_extractor = None
-    if cfg.fe_path:
-        meta_path = Path(cfg.fe_path).parent.parent / "meta.json"
-        with open(meta_path, "r") as f:
-            meta = PretrainingExpMeta.model_validate_json(f.read())
-        clip_dim = 512
-        pretrained = Pretrained(
+        # Initialize Q network
+        obs_space = env.observation_space
+        act_space = env.action_space
+        assert isinstance(obs_space, gym.spaces.Graph)
+        assert isinstance(obs_space.node_space, gym.spaces.Box)
+        assert isinstance(act_space, gym.spaces.Discrete)
+        feature_extractor = None
+        if cfg.fe_path:
+            meta_path = Path(cfg.fe_path).parent.parent / "meta.json"
+            with open(meta_path, "r") as f:
+                meta = PretrainingExpMeta.model_validate_json(f.read())
+            clip_dim = 512
+            pretrained = Pretrained(
+                env.num_parts,
+                meta.cfg.part_emb_size,
+                meta.cfg.num_steps,
+                obs_space.node_space.shape[0],
+                64,
+                clip_dim,
+            )
+            load_model(pretrained, cfg.fe_path)
+            feature_extractor = pretrained.feature_extractor
+        q_net = QNet(
             env.num_parts,
-            meta.cfg.part_emb_size,
-            meta.cfg.num_steps,
+            32,
+            cfg.process_layers,
             obs_space.node_space.shape[0],
             64,
-            clip_dim,
+            cfg.process_type,
+            tanh_logit=cfg.tanh_logit,
+            no_advantage=cfg.no_advantage,
+            freeze_fe=cfg.freeze_fe,
+            feature_extractor=feature_extractor,
         )
-        load_model(pretrained, cfg.fe_path)
-        feature_extractor = pretrained.feature_extractor
-    q_net = QNet(
-        env.num_parts,
-        32,
-        cfg.process_layers,
-        obs_space.node_space.shape[0],
-        64,
-        cfg.process_type,
-        tanh_logit=cfg.tanh_logit,
-        no_advantage=cfg.no_advantage,
-        freeze_fe=cfg.freeze_fe,
-        feature_extractor=feature_extractor,
-    )
-    q_net_target = copy.deepcopy(q_net)
-    q_net_target.to(device)
-    q_opt = torch.optim.Adam(q_net.parameters(), lr=cfg.q_lr)
+        q_net_target = copy.deepcopy(q_net)
+        q_net_target.to(device)
+        q_opt = torch.optim.Adam(q_net.parameters(), lr=cfg.q_lr)
 
-    # A replay buffer stores experience collected over all sampling runs
-    buffer = ReplayBuffer(
-        torch.Size((int(act_space.n),)),
-        cfg.buffer_size,
-    )
+        # A replay buffer stores experience collected over all sampling runs
+        buffer = ReplayBuffer(
+            torch.Size((int(act_space.n),)),
+            cfg.buffer_size,
+        )
 
-    obs_, info = env.reset()
-    obs = process_obs(obs_)
-    mask = process_act_masks(obs_)
-    warmup_steps = int(cfg.buffer_size / cfg.train_steps)
-    for step in tqdm(range(warmup_steps + cfg.iterations), position=0):
-        train_step = max(step - warmup_steps, 0)
-        percent_done = max((step - warmup_steps) / cfg.iterations, 0)
+        obs_, info = env.reset()
+        obs = process_obs(obs_)
+        mask = process_act_masks(obs_)
+        warmup_steps = int(cfg.buffer_size / cfg.train_steps)
+        for step in tqdm(range(warmup_steps + cfg.iterations), position=0):
+            train_step = max(step - warmup_steps, 0)
+            percent_done = max((step - warmup_steps) / cfg.iterations, 0)
 
-        # Collect experience
-        with torch.no_grad():
-            for _ in range(cfg.train_steps):
-                if (
-                    random.random() < cfg.q_epsilon * max(1.0 - percent_done, 0.05)
-                    or not buffer.filled
-                ):
-                    action = random.choice(
-                        [i for i, b in enumerate((~mask.bool()).tolist()) if b]
+            # Collect experience
+            with torch.no_grad():
+                for _ in range(cfg.train_steps):
+                    if (
+                        random.random() < cfg.q_epsilon * max(1.0 - percent_done, 0.05)
+                        or not buffer.filled
+                    ):
+                        action = random.choice(
+                            [i for i, b in enumerate((~mask.bool()).tolist()) if b]
+                        )
+                    else:
+                        action, _ = get_action(q_net, obs, mask)
+                    obs_, reward, done, trunc, info_ = env.step(action)
+
+                    # Normalize reward if last step
+                    if (done or trunc) and not cfg.use_potential:
+                        reward = (reward - cfg.norm_min) / (cfg.norm_max - cfg.norm_min)
+
+                    next_obs = process_obs(obs_)
+                    next_mask = process_act_masks(obs_)
+                    inserted_idx = buffer.next
+                    buffer.insert_step(
+                        [obs.to_data_list()[0]],
+                        [next_obs.to_data_list()[0]],
+                        torch.tensor([action]),
+                        [reward],
+                        [done],
+                        [
+                            (
+                                True
+                                if not cfg.distr_scorer
+                                else ((not cfg.use_potential) and (not (done or trunc)))
+                            )
+                        ],
                     )
-                else:
-                    action, _ = get_action(q_net, obs, mask)
-                obs_, reward, done, trunc, info_ = env.step(action)
+                    scorer.update(buffer)
+                    
+                    # Send model to be scored (may be a no-op)
+                    if cfg.use_potential or (done or trunc):
+                        scorer.push_model(env.model, inserted_idx, env.label_idx)
 
-                # Normalize reward if last step
-                if (done or trunc) and not cfg.use_potential:
-                    reward = (reward - cfg.norm_min) / (cfg.norm_max - cfg.norm_min)
+                    obs = next_obs
+                    mask = next_mask
+                    if done or trunc:
+                        obs_, info = env.reset()
+                        obs = process_obs(obs_)
+                        mask = process_act_masks(obs_)
 
-                next_obs = process_obs(obs_)
-                next_mask = process_act_masks(obs_)
-                buffer.insert_step(
-                    [obs.to_data_list()[0]],
-                    [next_obs.to_data_list()[0]],
-                    torch.tensor([action]),
-                    [reward],
-                    [done],
+            # Train
+            if buffer.filled:
+                # Unfreeze feature extractor if unfreezing is specified
+                if cfg.freeze_fe_for > 0 and train_step == cfg.freeze_fe_for:
+                    q_net.freeze_fe(False)
+
+                total_q_loss = train_dqn(
+                    q_net,
+                    q_net_target,
+                    q_opt,
+                    buffer,
+                    device,
+                    cfg.train_iters,
+                    cfg.train_batch_size,
+                    cfg.discount,
                 )
-                obs = next_obs
-                mask = next_mask
-                if done or trunc:
-                    obs_, info = env.reset()
-                    obs = process_obs(obs_)
-                    mask = process_act_masks(obs_)
 
-        # Train
-        if buffer.filled:
-            # Unfreeze feature extractor if unfreezing is specified
-            if cfg.freeze_fe_for > 0 and train_step == cfg.freeze_fe_for:
-                q_net.freeze_fe(False)
+                log_dict = {
+                    "avg_q_loss": total_q_loss / cfg.train_iters,
+                    "q_lr": q_opt.param_groups[-1]["lr"],
+                }
 
-            total_q_loss = train_dqn(
-                q_net,
-                q_net_target,
-                q_opt,
-                buffer,
-                device,
-                cfg.train_iters,
-                cfg.train_batch_size,
-                cfg.discount,
-            )
-
-            log_dict = {
-                "avg_q_loss": total_q_loss / cfg.train_iters,
-                "q_lr": q_opt.param_groups[-1]["lr"],
-            }
-
-            # Evaluate the network's performance after this training iteration.
-            if step % cfg.eval_every == 0:
-                with torch.no_grad():
-                    reward_total = 0.0
-                    pred_reward_total = 0.0
-                    max_reward_total = -float("inf")
-                    min_reward_total = float("inf")
-                    obs_, _ = test_env.reset()
-                    eval_obs = process_obs(obs_)
-                    eval_mask = process_act_masks(obs_)
-                    for _ in range(cfg.eval_steps):
-                        steps_taken = 0
-                        episode_reward = 0.0
-                        for _ in range(cfg.max_eval_steps):
-                            action, q_val = get_action(q_net, eval_obs, eval_mask)
-                            pred_reward_total += q_val
-                            obs_, reward, done, trunc, _ = test_env.step(action)
-                            eval_obs = eval_obs = process_obs(obs_)
-                            eval_mask = process_act_masks(obs_)
-                            steps_taken += 1
-                            reward_total += reward
-                            episode_reward += reward
-                            if done or trunc:
-                                obs_, info = test_env.reset()
-                                eval_obs = process_obs(obs_)
+                # Evaluate the network's performance after this training iteration.
+                if step % cfg.eval_every == 0:
+                    with torch.no_grad():
+                        reward_total = 0.0
+                        pred_reward_total = 0.0
+                        max_reward_total = -float("inf")
+                        min_reward_total = float("inf")
+                        obs_, _ = test_env.reset()
+                        eval_obs = process_obs(obs_)
+                        eval_mask = process_act_masks(obs_)
+                        images = {p: [] for p in prompts}
+                        for eval_run_id in range(cfg.eval_steps):
+                            steps_taken = 0
+                            episode_reward = 0.0
+                            for _ in range(cfg.max_eval_steps):
+                                action, q_val = get_action(q_net, eval_obs, eval_mask)
+                                pred_reward_total += q_val
+                                obs_, reward, done, trunc, _ = test_env.step(action)
+                                eval_obs = eval_obs = process_obs(obs_)
                                 eval_mask = process_act_masks(obs_)
-                                break
-                        max_reward_total = max(episode_reward, max_reward_total)
-                        min_reward_total = min(episode_reward, min_reward_total)
-                log_dict.update(
-                    {
-                        "avg_eval_episode_reward": reward_total / cfg.eval_steps,
-                        "eval_max_reward": max_reward_total,
-                        "eval_min_reward": min_reward_total,
-                        "avg_eval_episode_predicted_reward": pred_reward_total
-                        / cfg.eval_steps,
-                    }
-                )
+                                steps_taken += 1
+                                reward_total += reward
+                                episode_reward += reward
+                                if done or trunc:
+                                    images[test_env.prompt].append((episode_reward, test_env.screenshot()[0]))
 
-            wandb.log(log_dict)
+                                    obs_, info = test_env.reset()
+                                    eval_obs = process_obs(obs_)
+                                    eval_mask = process_act_masks(obs_)
+                                    break
+                            max_reward_total = max(episode_reward, max_reward_total)
+                            min_reward_total = min(episode_reward, min_reward_total)
+                    log_dict.update(
+                        {
+                            "avg_eval_episode_reward": reward_total / cfg.eval_steps,
+                            "eval_max_reward": max_reward_total,
+                            "eval_min_reward": min_reward_total,
+                            "avg_eval_episode_predicted_reward": pred_reward_total
+                            / cfg.eval_steps,
+                            "eval_images": sum([[wandb.Image(img, caption=f"{k}: {score}") for (score, img) in imgs] for k, imgs in images.items() if len(imgs) > 0], [])
+                        }
+                    )
 
-            # Update Q target
-            if step % cfg.target_update == 0:
-                q_net_target.load_state_dict(q_net.state_dict())
+                wandb.log(log_dict)
 
-            # Save checkpoint
-            if step % cfg.save_every == 0:
-                save_model(
-                    q_net,
-                    str(chkpt_path / f"q_net-{step}.safetensors"),
-                )
-                save_model(
-                    q_net,
-                    str(chkpt_path / f"q_net-latest.safetensors"),
-                )
+                # Update Q target
+                if step % cfg.target_update == 0:
+                    q_net_target.load_state_dict(q_net.state_dict())
+
+                # Save checkpoint
+                if step % cfg.save_every == 0:
+                    save_model(
+                        q_net,
+                        str(chkpt_path / f"q_net-{step}.safetensors"),
+                    )
+                    save_model(
+                        q_net,
+                        str(chkpt_path / f"q_net-latest.safetensors"),
+                    )

@@ -4,8 +4,13 @@ from typing import *
 from torch_geometric.data import Data
 
 from kitbasher_rust import EngineWrapper, PyPlacedConfig
-
 from kitbasher.env import ConstructionEnv
+
+def dummy_scorer(
+    model: List[PyPlacedConfig], data: Data, env: ConstructionEnv, is_done: bool
+) -> tuple[float, bool]:
+    return 0.0, False
+
 
 def single_start(engine: EngineWrapper):
     config = engine.create_config(5, 0, 0, 0)
@@ -123,6 +128,7 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
         return score, False
 
     return clip_scorer
+
 
 def create_contrastive_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
     from transformers import CLIPProcessor, CLIPModel
