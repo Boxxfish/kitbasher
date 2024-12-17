@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-import importlib
+from torch_geometric.data import Data
 import os
 from pathlib import Path
 from typing import *
@@ -11,7 +11,18 @@ import wandb
 
 T = TypeVar("T")
 
-def parse_args(cfg_t: type[T: BaseModel]) -> T:
+
+def get_action(
+    q_net: nn.Module, obs: Data, action_mask: torch.Tensor
+) -> tuple[int, float]:
+    q_vals = q_net(obs).squeeze(1)  # Shape: (num_nodes)
+    q_vals = torch.masked_fill(q_vals, action_mask, -torch.inf)
+    action = q_vals.argmax(0).item()
+    q_val = q_vals.amax(0).item()
+    return action, q_val
+
+
+def parse_args(cfg_t: type[T:BaseModel]) -> T:
     parser = ArgumentParser()
     for k, v in cfg_t.model_fields.items():
         if v.annotation == bool:
@@ -25,6 +36,7 @@ def parse_args(cfg_t: type[T: BaseModel]) -> T:
     args = parser.parse_args()
     cfg = cfg_t(**args.__dict__)
     return cfg
+
 
 def create_directory(out_dir: str, meta: T) -> Path:
     assert wandb.run is not None
@@ -51,6 +63,7 @@ def create_directory(out_dir: str, meta: T) -> Path:
     except OSError as e:
         print(e)
     return chkpt_path
+
 
 def get_img_size(old_h: int, old_w: int, conv: torch.nn.Conv2d) -> Tuple[int, int]:
     """

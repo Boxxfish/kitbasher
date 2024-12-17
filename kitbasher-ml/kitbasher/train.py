@@ -31,7 +31,7 @@ from kitbasher.pretraining import FeatureExtractor, Pretrained
 from kitbasher.distributed_scorer import (
     get_scorer_fn,
 )
-from kitbasher.utils import create_directory, parse_args
+from kitbasher.utils import create_directory, get_action, parse_args
 from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 
 _: Any
@@ -231,14 +231,6 @@ class QNet(nn.Module):
         if self.tanh_logit:
             q_val = torch.tanh(q_val)
         return q_val
-
-
-def get_action(q_net: nn.Module, obs: Data, action_mask: Tensor) -> tuple[int, float]:
-    q_vals = q_net(obs).squeeze(1)  # Shape: (num_nodes)
-    q_vals = torch.masked_fill(q_vals, action_mask, -torch.inf)
-    action = q_vals.argmax(0).item()
-    q_val = q_vals.amax(0).item()
-    return action, q_val
 
 
 def process_obs(obs: Data) -> Batch:

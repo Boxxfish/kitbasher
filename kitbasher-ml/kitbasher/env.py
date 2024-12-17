@@ -9,6 +9,7 @@ from kitbasher_rust import EngineWrapper, PyAABB, PyPlacedConfig
 from torch_geometric.data import Data  # type: ignore
 import rerun as rr  # type: ignore
 import open3d as o3d
+from dataclasses import dataclass
 
 from kitbasher_rust.kitbasher_rust import Renderer  # type: ignore
 
@@ -28,6 +29,15 @@ MAX_CONNECTIONS = 12
 CONNECTION_DIM = 3 + 3 + 3 + 1 + 1
 NODE_DIM = 6 + 4 + 1 + MAX_CONNECTIONS * CONNECTION_DIM
 MAX_NODES = 10_000
+
+
+@dataclass
+class EnvState:
+    model: List[PyPlacedConfig]
+    place_configs: List[PyPlacedConfig]
+    timer: int
+    last_score: float
+    label_idx: int
 
 
 class PartModel:
@@ -59,7 +69,9 @@ class PartModel:
             ),
         )
 
+
 renderer = None
+
 
 class ConstructionEnv(gym.Env):
     def __init__(
@@ -164,9 +176,7 @@ class ConstructionEnv(gym.Env):
         Returns a front and back render of the model.
         """
         buffers = self.renderer.render_model(self.model)
-        return tuple(
-            np.array(b).reshape([512, 512, 4])[::-1, :, :3] for b in buffers
-        )
+        return tuple(np.array(b).reshape([512, 512, 4])[::-1, :, :3] for b in buffers)
 
     def gen_obs(self) -> Data:
         self.model = self.engine.get_model()
@@ -234,6 +244,23 @@ class ConstructionEnv(gym.Env):
         )
         return data
 
+    def get_state(self) -> EnvState:
+        return EnvState(
+            model=clone_placed_list(self.model),
+            place_configs=clone_placed_list(self.place_configs),
+            timer=self.timer,
+            last_score=self.last_score,
+            label_idx=self.label_idx,
+        )
+    
+    def load_state(self, state: EnvState):
+        self.model = clone_placed_list(state.model)
+        self.place_configs = clone_placed_list(state.place_configs)
+        self.timer = state.timer
+        self.last_score = state.last_score
+        self.label_idx = state.label_idx
+        self.prompt = self.prompts[state.label_idx]
+
 
 def merge_bboxes(bboxes: List[PyAABB]) -> Tuple[List[float], List[float]]:
     min_bbox = [float("inf")] * 3
@@ -246,3 +273,6 @@ def merge_bboxes(bboxes: List[PyAABB]) -> Tuple[List[float], List[float]]:
         min_bbox = [min(new, old) for new, old in zip(min_, min_bbox)]
         max_bbox = [max(new, old) for new, old in zip(max_, max_bbox)]
     return min_bbox, max_bbox
+
+def clone_placed_list(ps: List[PyPlacedConfig]) -> List[PyPlacedConfig]:
+    return [PyPlacedConfig.from_json(p.to_json()) for p in ps]
