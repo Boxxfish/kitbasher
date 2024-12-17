@@ -91,7 +91,7 @@ def run_mcts(
     discount: float,
     num_actions: int,
     c_puct: float = 4.0,
-) -> int:
+) -> Tuple[EnvState, float]:
     """
     Runs MCTS on the provided env, and returns the sequence with the highest reward.
 
@@ -116,4 +116,4 @@ def run_mcts(
         
         rollout_num += 1
     print("Finished rollouts")
-    return best_sol
+    return (best_sol, best_score)

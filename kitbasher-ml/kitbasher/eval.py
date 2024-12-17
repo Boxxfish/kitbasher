@@ -12,6 +12,7 @@ from safetensors.torch import load_model
 import numpy as np
 import torch
 from kitbasher import train
+from kitbasher.mcts import run_mcts
 from kitbasher.pretraining import Pretrained
 from kitbasher.scorers import create_contrastive_clip_scorer
 from kitbasher.train import (
@@ -43,6 +44,9 @@ class Config:
     checkpoint: str = ""
     use_mirror: bool = False
     single_class: str = ""
+    use_mcts: bool = False
+    mcts_num_rollouts: int = 100
+    mcts_c_puct: float = 4.0
     device: str = "cuda"
 
 
@@ -135,32 +139,49 @@ if __name__ == "__main__":
         print("Label:", env.prompts[env.label_idx])
         eval_obs = process_obs(obs_)
         eval_mask = process_act_masks(obs_)
-        for _ in range(cfg.max_eval_steps):
-            if cfg.checkpoint:
-                action, q_val = get_action(q_net, eval_obs, eval_mask)
-            else:
-                action = action = random.choice(
-                    [i for i, b in enumerate((~eval_mask.bool()).tolist()) if b]
+        if not cfg.use_mcts:
+            for _ in range(cfg.max_eval_steps):
+                if cfg.checkpoint:
+                    action, q_val = get_action(q_net, eval_obs, eval_mask)
+                else:
+                    action = action = random.choice(
+                        [i for i, b in enumerate((~eval_mask.bool()).tolist()) if b]
+                    )
+                obs_, reward, done, trunc, info = env.step(action)
+                env.render()
+                rr.log(
+                    "volume",
+                    rr.Boxes3D(half_sizes=[40.0, 10.0, 5.0], centers=[0, 0, 0]),
                 )
-            obs_, reward, done, trunc, info = env.step(action)
-            env.render()
-            rr.log(
-                "volume", rr.Boxes3D(half_sizes=[40.0, 10.0, 5.0], centers=[0, 0, 0])
-            )
 
-            # Show model scoring screenshot
-            if done or trunc:
-                screenshots = env.screenshot()
-                plt.imshow(screenshots[0])
-                plt.show()
-                plt.imshow(screenshots[1])
-                plt.show()
-            print(reward)
+                # Show model scoring screenshot
+                if done or trunc:
+                    screenshots = env.screenshot()
+                    plt.imshow(screenshots[0])
+                    plt.show()
+                    plt.imshow(screenshots[1])
+                    plt.show()
+                print(reward)
 
-            eval_obs = eval_obs = process_obs(obs_)
-            eval_mask = process_act_masks(obs_)
-            if done or trunc:
-                obs_, info = env.reset()
-                eval_obs = process_obs(obs_)
+                eval_obs = eval_obs = process_obs(obs_)
                 eval_mask = process_act_masks(obs_)
-                break
+                if done or trunc:
+                    obs_, info = env.reset()
+                    eval_obs = process_obs(obs_)
+                    eval_mask = process_act_masks(obs_)
+                    break
+        else:
+            best_sol, best_score = run_mcts(
+                q_net,
+                env,
+                env.get_state(),
+                cfg.mcts_num_rollouts,
+                1.0,
+                cfg.max_actions_per_step,
+                cfg.mcts_c_puct,
+            )
+            print(best_score)
+            env.load_state(best_sol)
+            screenshots = env.screenshot()
+            plt.imshow(screenshots[0])
+            plt.show()
