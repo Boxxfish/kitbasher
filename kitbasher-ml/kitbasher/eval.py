@@ -14,18 +14,13 @@ import torch
 from kitbasher import train
 from kitbasher.mcts import run_mcts
 from kitbasher.pretraining import Pretrained
-from kitbasher.scorers import create_contrastive_clip_scorer
+from kitbasher.scorers import create_contrastive_clip_scorer, connect_scorer, connect_start, create_clip_scorer, single_start, volume_fill_scorer
 from kitbasher.train import (
     LABELS,
     QNet,
-    connect_scorer,
-    connect_start,
-    create_clip_scorer,
     get_action,
     process_act_masks,
     process_obs,
-    single_start,
-    volume_fill_scorer,
 )
 from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 from kitbasher.env import ConstructionEnv

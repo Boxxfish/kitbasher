@@ -31,10 +31,14 @@ class MCTSNode:
         if not self.children:
             # Expand child nodes when first expanding
             obs = env.gen_obs()
-            q_vals = get_action(q_net, obs, torch.zeros([self.num_actions], dtype=torch.bool))
+            mask = torch.tensor([1] * len(env.model) + [0] * len(env.place_configs))
+            q_vals = q_net(obs).squeeze(1)
+            q_vals = torch.masked_fill(q_vals, mask, -torch.inf)
             self.children = []
-            for i in range(self.num_actions):
-                self.children.append(MCTSNode(q_vals[i].item(), self.num_actions, self.discount))
+            for i in range(len(q_vals)):
+                if mask[i].item():
+                    continue
+                self.children.append(MCTSNode(q_vals[i].item(), self.num_actions, self.discount, self.c_puct))
         
         # Choose action and simulate next step
         total_visited_sqrt = math.sqrt(sum([x.visited for x in self.children]))
@@ -46,6 +50,7 @@ class MCTSNode:
             self.children[action].state = env.get_state()
             done = done_ or trunc_
         else:
+            reward = self.rewards[action]
             done = self.children[action].done
         
         subsequent_return = 0.0
@@ -99,6 +104,7 @@ def run_mcts(
     """
     # Root node is special case, we'll have the first expansion set its actual value
     root = MCTSNode(0.0, num_actions, discount, c_puct)
+    root.state = initial_state
     root.visited = 0
     best_sol = None
     best_score = -float("inf")
