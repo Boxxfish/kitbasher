@@ -279,6 +279,11 @@ impl KBEngine {
         &self.model
     }
 
+    /// Sets the current model.
+    pub fn set_model(&mut self, model: &[PlacedConfig]) {
+        self.model = model.to_vec();
+    }
+
     /// Clears the current model.
     pub fn clear_model(&mut self) {
         self.model = Vec::new();

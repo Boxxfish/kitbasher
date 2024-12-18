@@ -254,9 +254,7 @@ class ConstructionEnv(gym.Env):
         )
     
     def load_state(self, state: EnvState):
-        self.reset()
-        for p in self.model:
-            self.engine.place_part(p)
+        self.engine.set_model(state.place_configs)
         self.place_configs = clone_placed_list(state.place_configs)
         self.timer = state.timer
         self.last_score = state.last_score
