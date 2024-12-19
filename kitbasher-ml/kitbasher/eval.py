@@ -12,19 +12,15 @@ from safetensors.torch import load_model
 import numpy as np
 import torch
 from kitbasher import train
+from kitbasher.mcts import run_mcts
 from kitbasher.pretraining import Pretrained
-from kitbasher.scorers import create_contrastive_clip_scorer
+from kitbasher.scorers import create_contrastive_clip_scorer, connect_scorer, connect_start, create_clip_scorer, single_start, volume_fill_scorer
 from kitbasher.train import (
     LABELS,
     QNet,
-    connect_scorer,
-    connect_start,
-    create_clip_scorer,
     get_action,
     process_act_masks,
     process_obs,
-    single_start,
-    volume_fill_scorer,
 )
 from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 from kitbasher.env import ConstructionEnv
@@ -43,6 +39,10 @@ class Config:
     checkpoint: str = ""
     use_mirror: bool = False
     single_class: str = ""
+    use_mcts: bool = False
+    mcts_num_rollouts: int = 100
+    mcts_c_puct: float = 4.0
+    rerun: bool = False
     device: str = "cuda"
 
 
@@ -75,8 +75,12 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     labels = LABELS
-    if cfg.single_class:
-        labels = [cfg.single_class]
+    if cfg.checkpoint:
+        with open(Path(cfg.checkpoint).parent.parent / "meta.json", "r") as f:
+            meta_json = f.read()
+        train_cfg = train.ExpMeta.model_validate_json(meta_json).args
+        if train_cfg.single_class:
+            labels = [c.strip() for c in train_cfg.single_class.split(",")]
     prompts = [cfg.prompt + l for l in labels]
 
     env = ConstructionEnv(
@@ -85,7 +89,7 @@ if __name__ == "__main__":
         max_actions_per_step=cfg.max_actions_per_step,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
-        visualize=True,
+        visualize=cfg.rerun,
         prompts=prompts,
         use_mirror=cfg.use_mirror,
     )
@@ -121,7 +125,7 @@ if __name__ == "__main__":
             32,
             train_cfg.process_layers,
             obs_space.node_space.shape[0],
-            64,
+            train_cfg.hidden_dim,
             train_cfg.process_type,
             train_cfg.tanh_logit,
             train_cfg.no_advantage,
@@ -135,32 +139,50 @@ if __name__ == "__main__":
         print("Label:", env.prompts[env.label_idx])
         eval_obs = process_obs(obs_)
         eval_mask = process_act_masks(obs_)
-        for _ in range(cfg.max_eval_steps):
-            if cfg.checkpoint:
-                action, q_val = get_action(q_net, eval_obs, eval_mask)
-            else:
-                action = action = random.choice(
-                    [i for i, b in enumerate((~eval_mask.bool()).tolist()) if b]
+        if not cfg.use_mcts:
+            for _ in range(cfg.max_eval_steps):
+                if cfg.checkpoint:
+                    action, q_val = get_action(q_net, eval_obs, eval_mask)
+                else:
+                    action = action = random.choice(
+                        [i for i, b in enumerate((~eval_mask.bool()).tolist()) if b]
+                    )
+                obs_, reward, done, trunc, info = env.step(action)
+                env.render()
+                rr.log(
+                    "volume",
+                    rr.Boxes3D(half_sizes=[40.0, 10.0, 5.0], centers=[0, 0, 0]),
                 )
-            obs_, reward, done, trunc, info = env.step(action)
-            env.render()
-            rr.log(
-                "volume", rr.Boxes3D(half_sizes=[40.0, 10.0, 5.0], centers=[0, 0, 0])
-            )
 
-            # Show model scoring screenshot
-            if done or trunc:
-                screenshots = env.screenshot()
-                plt.imshow(screenshots[0])
-                plt.show()
-                plt.imshow(screenshots[1])
-                plt.show()
-            print(reward)
+                # Show model scoring screenshot
+                if done or trunc:
+                    screenshots = env.screenshot()
+                    plt.imshow(screenshots[0])
+                    plt.show()
+                    plt.imshow(screenshots[1])
+                    plt.show()
+                print(reward)
 
-            eval_obs = eval_obs = process_obs(obs_)
-            eval_mask = process_act_masks(obs_)
-            if done or trunc:
-                obs_, info = env.reset()
-                eval_obs = process_obs(obs_)
+                eval_obs = eval_obs = process_obs(obs_)
                 eval_mask = process_act_masks(obs_)
-                break
+                if done or trunc:
+                    obs_, info = env.reset()
+                    eval_obs = process_obs(obs_)
+                    eval_mask = process_act_masks(obs_)
+                    break
+        else:
+            env.label_idx = 0
+            best_sol, best_score = run_mcts(
+                q_net,
+                env,
+                env.get_state(),
+                cfg.mcts_num_rollouts,
+                1.0,
+                cfg.max_actions_per_step,
+                cfg.mcts_c_puct,
+            )
+            print(best_score)
+            env.load_state(best_sol)
+            screenshots = env.screenshot()
+            plt.imshow(screenshots[0])
+            plt.show()

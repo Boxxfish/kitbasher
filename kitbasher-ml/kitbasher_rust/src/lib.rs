@@ -1,8 +1,8 @@
 use bevy::math::{Quat, Vec3};
 use kitbasher_game::engine::{Axis, Connection, Connector, KBEngine, PlacedConfig, AABB};
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 use three_d::*;
-use serde::{Serialize, Deserialize};
 
 #[pyclass]
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
@@ -286,6 +286,11 @@ impl EngineWrapper {
             .iter()
             .map(|p| p.to_owned().into())
             .collect()
+    }
+
+    pub fn set_model(&mut self, model: Vec<PyPlacedConfig>) {
+        self.engine
+            .set_model(&model.iter().cloned().map(|p| p.into()).collect::<Vec<_>>());
     }
 
     pub fn place_part(&mut self, placement: PyPlacedConfig) {
