@@ -111,6 +111,7 @@ class ConstructionEnv(gym.Env):
             )
         self.renderer = renderer
         self.label_idx = 0
+        self.visualize = visualize
         if visualize:
             rr.init("Construction")
             rr.spawn()
@@ -148,15 +149,16 @@ class ConstructionEnv(gym.Env):
         return obs, reward, done, False, {}
 
     def render(self):
-        translations = [[] for _ in range(len(BLOCK_PARTS))]
-        rotations = [[] for _ in range(len(BLOCK_PARTS))]
-        for placed in self.model:
-            pos = placed.position
-            translations[placed.part_id].append([pos.x, pos.y, pos.z])
-            rot = placed.rotation
-            rotations[placed.part_id].append([rot.x, rot.y, rot.z, rot.w])
-        for i, model in enumerate(self.models):
-            model.render(translations[i], rotations[i])
+        if self.visualize:
+            translations = [[] for _ in range(len(BLOCK_PARTS))]
+            rotations = [[] for _ in range(len(BLOCK_PARTS))]
+            for placed in self.model:
+                pos = placed.position
+                translations[placed.part_id].append([pos.x, pos.y, pos.z])
+                rot = placed.rotation
+                rotations[placed.part_id].append([rot.x, rot.y, rot.z, rot.w])
+            for i, model in enumerate(self.models):
+                model.render(translations[i], rotations[i])
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
@@ -254,7 +256,8 @@ class ConstructionEnv(gym.Env):
         )
     
     def load_state(self, state: EnvState):
-        self.engine.set_model(state.place_configs)
+        self.engine.set_model(state.model)
+        self.model = clone_placed_list(state.model)
         self.place_configs = clone_placed_list(state.place_configs)
         self.timer = state.timer
         self.last_score = state.last_score

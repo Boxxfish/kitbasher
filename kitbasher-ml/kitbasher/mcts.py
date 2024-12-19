@@ -18,34 +18,38 @@ class MCTSNode:
         self.c_puct = c_puct
         self.num_actions = num_actions
         self.children: Optional[list[MCTSNode]] = None
-        self.rewards: List[Optional[float]] = [None] * num_actions
+        self.rewards: Optional[List[Optional[float]]] = None
         self.done = False
         self.state = None
+        self.action_offset = None # To account for masking
 
     def simulate(self, q_net: nn.Module, env: ConstructionEnv) -> Optional[Tuple[EnvState, float]]:
         """
         Runs simulate step on this node, expanding children as needed.
         """
         env.load_state(self.state)
+        print(env.timer)
         
         if not self.children:
             # Expand child nodes when first expanding
             obs = env.gen_obs()
             mask = torch.tensor([1] * len(env.model) + [0] * len(env.place_configs))
             q_vals = q_net(obs).squeeze(1)
-            q_vals = torch.masked_fill(q_vals, mask, -torch.inf)
             self.children = []
             for i in range(len(q_vals)):
                 if mask[i].item():
                     continue
+                elif not self.action_offset:
+                    self.action_offset = i
                 self.children.append(MCTSNode(q_vals[i].item(), self.num_actions, self.discount, self.c_puct))
+            self.rewards = [None] * len(self.children)
         
         # Choose action and simulate next step
         total_visited_sqrt = math.sqrt(sum([x.visited for x in self.children]))
         action = max(enumerate(self.children), key=lambda x: x[1].puct(total_visited_sqrt))[0]
         
         if self.rewards[action] is None:
-            _, reward, done_, trunc_, _ = env.step(action)
+            _, reward, done_, trunc_, _ = env.step(self.action_offset + action)
             self.rewards[action] = reward
             self.children[action].state = env.get_state()
             done = done_ or trunc_
@@ -64,7 +68,7 @@ class MCTSNode:
             self.children[action].visited += 1
         else:
             # Expand child node if not done
-            self.children[action].simulate(q_net, env)
+            done_results = self.children[action].simulate(q_net, env)
             subsequent_return = self.children[action].avg_value()
             
         self.total_return += reward + self.discount * subsequent_return
@@ -83,7 +87,10 @@ class MCTSNode:
         """
         Returns the PUCT score.
         Currently assumes uniform probablities.
+        If this node is done, returns -1 to prevent re-expansion.
         """
+        if self.done:
+            return -1
         q = self.avg_value()
         u = self.c_puct * (1 / self.num_actions) * total_visited_sqrt / (1 + self.visited)
         return q + u
@@ -110,11 +117,14 @@ def run_mcts(
     best_score = -float("inf")
     rollout_num = 0
     while best_sol is None or rollout_num < rollouts:
-        env.load_state(initial_state)
+        print(f"Rollout {rollout_num}")
         result = root.simulate(q_net, env)
 
         # If a solution was returned, compare it against the previous solution
         if result:
+            print("")
+            print(result[1])
+            print("")
             new_sol, new_score = result
             if new_score > best_score:
                 best_sol = new_sol

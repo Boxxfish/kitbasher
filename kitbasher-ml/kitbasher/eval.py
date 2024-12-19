@@ -42,6 +42,7 @@ class Config:
     use_mcts: bool = False
     mcts_num_rollouts: int = 100
     mcts_c_puct: float = 4.0
+    rerun: bool = False
     device: str = "cuda"
 
 
@@ -74,8 +75,12 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     labels = LABELS
-    if cfg.single_class:
-        labels = [cfg.single_class]
+    if cfg.checkpoint:
+        with open(Path(cfg.checkpoint).parent.parent / "meta.json", "r") as f:
+            meta_json = f.read()
+        train_cfg = train.ExpMeta.model_validate_json(meta_json).args
+        if train_cfg.single_class:
+            labels = [c.strip() for c in train_cfg.single_class.split(",")]
     prompts = [cfg.prompt + l for l in labels]
 
     env = ConstructionEnv(
@@ -84,7 +89,7 @@ if __name__ == "__main__":
         max_actions_per_step=cfg.max_actions_per_step,
         use_potential=cfg.use_potential,
         max_steps=cfg.max_steps,
-        visualize=True,
+        visualize=cfg.rerun,
         prompts=prompts,
         use_mirror=cfg.use_mirror,
     )
@@ -120,7 +125,7 @@ if __name__ == "__main__":
             32,
             train_cfg.process_layers,
             obs_space.node_space.shape[0],
-            64,
+            train_cfg.hidden_dim,
             train_cfg.process_type,
             train_cfg.tanh_logit,
             train_cfg.no_advantage,
@@ -166,6 +171,7 @@ if __name__ == "__main__":
                     eval_mask = process_act_masks(obs_)
                     break
         else:
+            env.label_idx = 0
             best_sol, best_score = run_mcts(
                 q_net,
                 env,
