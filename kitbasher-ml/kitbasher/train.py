@@ -103,6 +103,7 @@ class Config(BaseModel):
     part_emb_size: int = 32
     hidden_dim: int = 64
     last_step_sample_bonus: float = 1.0 # How many times likely the final step will be sampled compared to previous steps
+    add_steps: bool = False
     device: str = "cuda"
 
 
@@ -279,6 +280,7 @@ if __name__ == "__main__":
             max_steps=cfg.max_steps,
             prompts=prompts,
             use_mirror=cfg.use_mirror,
+            add_steps=cfg.add_steps,
         )
         test_env = ConstructionEnv(
             score_fn=eval_score_fn,
@@ -288,6 +290,7 @@ if __name__ == "__main__":
             max_steps=cfg.max_steps,
             prompts=prompts,
             use_mirror=cfg.use_mirror,
+            add_steps=cfg.add_steps,
         )
 
         # Initialize Q network
