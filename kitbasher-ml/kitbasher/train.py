@@ -102,6 +102,7 @@ class Config(BaseModel):
     num_render_workers: int = 2
     part_emb_size: int = 32
     hidden_dim: int = 64
+    last_step_sample_bonus: float = 1.0 # How many times likely the final step will be sampled compared to previous steps
     device: str = "cuda"
 
 
@@ -331,6 +332,7 @@ if __name__ == "__main__":
         buffer = ReplayBuffer(
             torch.Size((int(act_space.n),)),
             cfg.buffer_size,
+            cfg.last_step_sample_bonus > 1,
         )
 
         obs_, info = env.reset()
@@ -375,6 +377,7 @@ if __name__ == "__main__":
                                 else ((not cfg.use_potential) and (not (done or trunc)))
                             )
                         ],
+                        [1.0 if done or trunc else cfg.last_step_sample_bonus]
                     )
                     scorer.update(buffer)
                     
