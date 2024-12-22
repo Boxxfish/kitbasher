@@ -102,6 +102,7 @@ class Config(BaseModel):
     num_render_workers: int = 2
     part_emb_size: int = 32
     hidden_dim: int = 64
+    add_steps: bool = False
     device: str = "cuda"
 
 
@@ -278,6 +279,7 @@ if __name__ == "__main__":
             max_steps=cfg.max_steps,
             prompts=prompts,
             use_mirror=cfg.use_mirror,
+            add_steps=cfg.add_steps,
         )
         test_env = ConstructionEnv(
             score_fn=eval_score_fn,
@@ -287,6 +289,7 @@ if __name__ == "__main__":
             max_steps=cfg.max_steps,
             prompts=prompts,
             use_mirror=cfg.use_mirror,
+            add_steps=cfg.add_steps,
         )
 
         # Initialize Q network

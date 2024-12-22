@@ -75,10 +75,12 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError(f"Invalid score function, got {cfg.score_fn}")
     labels = LABELS
+    add_steps = False
     if cfg.checkpoint:
         with open(Path(cfg.checkpoint).parent.parent / "meta.json", "r") as f:
             meta_json = f.read()
         train_cfg = train.ExpMeta.model_validate_json(meta_json).args
+        add_steps =  train_cfg.add_steps
         if train_cfg.single_class:
             labels = [c.strip() for c in train_cfg.single_class.split(",")]
     prompts = [cfg.prompt + l for l in labels]
@@ -92,6 +94,7 @@ if __name__ == "__main__":
         visualize=cfg.rerun,
         prompts=prompts,
         use_mirror=cfg.use_mirror,
+        add_steps=add_steps,
     )
 
     # Initialize Q network

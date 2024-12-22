@@ -86,6 +86,7 @@ class ConstructionEnv(gym.Env):
         max_steps: Optional[int] = None,
         visualize: bool = False,
         prompts: List[str] = ["test"],
+        add_steps: bool = False,
     ) -> None:
         global renderer
         self.num_parts = len(BLOCK_PARTS)
@@ -95,8 +96,9 @@ class ConstructionEnv(gym.Env):
         self.timer = 0
         self.max_actions_per_step = max_actions_per_step
         self.max_steps = max_steps
+        step_dim = 0 if not add_steps else self.max_steps
         self.observation_space = gym.spaces.Graph(
-            node_space=gym.spaces.Box(-1, 1, [len(prompts) + NODE_DIM]), edge_space=None
+            node_space=gym.spaces.Box(-1, 1, [len(prompts) + NODE_DIM + step_dim]), edge_space=None
         )
         self.action_space = gym.spaces.Discrete(MAX_NODES)
         self.score_fn = score_fn
@@ -105,6 +107,7 @@ class ConstructionEnv(gym.Env):
         self.last_score = 0.0
         self.prompt = ""
         self.prompts = prompts
+        self.add_steps = add_steps
         if not renderer:
             renderer = Renderer(
                 [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], use_mirror
@@ -213,7 +216,12 @@ class ConstructionEnv(gym.Env):
             node_vec[rot_start + 2] = config.rotation.z
             node_vec[rot_start + 3] = config.rotation.w
             node_vec[rot_start + 4] = int(is_action)
-            conn_start_all = rot_start + 4 + 1
+            if self.add_steps:
+                step_start = rot_start + 5
+                node_vec[step_start + self.timer] = 1
+                conn_start_all = step_start + self.max_steps
+            else:
+                conn_start_all = rot_start + 5
             for i in range(MAX_CONNECTIONS):
                 if i < len(config.connectors):
                     conn_start = conn_start_all + i * CONNECTION_DIM
