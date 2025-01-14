@@ -203,7 +203,7 @@ class ConstructionEnv(gym.Env):
             is_action = j >= len(self.model)
             part_ids.append(config.part_id)
             min_bbox, max_bbox = merge_bboxes(config.bboxes)
-            node_vec = torch.zeros([NODE_DIM])
+            node_vec = torch.zeros([NODE_DIM + self.max_steps])
             node_vec[0] = min_bbox[0] / 10.0
             node_vec[1] = min_bbox[1] / 10.0
             node_vec[2] = min_bbox[2] / 10.0
