@@ -86,6 +86,7 @@ class ConstructionEnv(gym.Env):
         max_steps: Optional[int] = None,
         visualize: bool = False,
         prompts: List[str] = ["test"],
+        selected_prompts: List[int] = [0],
         add_steps: bool = False,
     ) -> None:
         global renderer
@@ -107,6 +108,7 @@ class ConstructionEnv(gym.Env):
         self.last_score = 0.0
         self.prompt = ""
         self.prompts = prompts
+        self.selected_prompts = selected_prompts
         self.add_steps = add_steps
         if not renderer:
             renderer = Renderer(
@@ -172,7 +174,7 @@ class ConstructionEnv(gym.Env):
         obs = self.gen_obs()
         if self.use_potential:
             self.last_score, _ = self.score_fn(self.model, obs, self, False)
-        self.label_idx = random.randrange(0, len(self.prompts))
+        self.label_idx = random.choice(self.selected_prompts)
         self.prompt = self.prompts[self.label_idx]
         return obs, {}
 
