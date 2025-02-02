@@ -62,7 +62,7 @@ def main():
         # Send message to training loop
         sender.send_json(
             ScoredMessage(
-                buffer_idx=scorer_msg.buffer_idx, score=score
+                buffer_idx=scorer_msg.buffer_idx, score=score, traj_id=scorer_msg.traj_id,
             ).model_dump()
         )
 

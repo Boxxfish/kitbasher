@@ -77,12 +77,13 @@ class DistributedScorer:
             render_proc = subprocess.Popen(args)
             self.render_procs.append(render_proc)
 
-    def push_model(self, model: list[PyPlacedConfig], buffer_idx: int, label_idx: int):
+    def push_model(self, model: list[PyPlacedConfig], buffer_idx: int, label_idx: int, traj_id: int):
         """Sends a model to be rendered and scored."""
         self.sender.send_json(
             RenderMessage(
                 buffer_idx=buffer_idx,
                 label_idx=label_idx,
+                traj_id=traj_id,
                 part_configs=[part_config.to_json() for part_config in model],
                 prompts=self.prompts,
                 scorer_fn=self.scorer_fn,
@@ -119,6 +120,7 @@ class DistributedScorer:
                     buffer.rewards[scored_msg.buffer_idx] = norm_score
                     buffer.readys[scored_msg.buffer_idx] = True
                 buffer.scores[scored_msg.buffer_idx] = norm_score
+                buffer.set_traj_return(scored_msg.traj_id, norm_score)
                 self.num_queued_items -= 1
             except zmq.Again:
                 # If we've hit the max for queued items, keep polling until we catch up.

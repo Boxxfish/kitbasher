@@ -17,6 +17,7 @@ def train_dqn(
     train_iters: int,
     train_batch_size: int,
     discount: float,
+    use_traj_returns: bool,
 ) -> float:
     """
     Performs the DQN training loop.
@@ -33,6 +34,7 @@ def train_dqn(
             actions,
             rewards,
             dones,
+            traj_returns,
         ) = buffer.sample(train_batch_size)
 
         # Move batch to device if applicable
@@ -70,9 +72,12 @@ def train_dqn(
             next_actions = torch.tensor(
                 next_actions_, device=device
             )  # Shape: (batch_size)
-            q_target = rewards.unsqueeze(1) + discount * q_net_target(
-                states
-            ).detach().gather(0, next_actions.unsqueeze(1)) * (1.0 - dones.unsqueeze(1))
+            next_q = q_net_target(states).detach().gather(0, next_actions.unsqueeze(1))
+            if use_traj_returns:
+                next_q = torch.max(next_q, traj_returns.to(device).unsqueeze(1))
+            q_target = rewards.unsqueeze(1) + discount * next_q * (
+                1.0 - dones.unsqueeze(1)
+            )
         diff = (
             q_net(prev_states).gather(0, (prev_states_offsets + actions).unsqueeze(1))
             - q_target

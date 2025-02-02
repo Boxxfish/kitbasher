@@ -107,6 +107,7 @@ class Config(BaseModel):
     last_step_sample_bonus_start: float = 1.0 # Last step sample bonus at the start; will anneal to `last_step_sample_bonus`
     last_step_sample_bonus_start_steps: int = 0 # Annealing time for last step sample bonus
     add_steps: bool = False
+    use_traj_returns: bool = False
     device: str = "cuda"
 
 class ExpMeta(BaseModel):
@@ -242,12 +243,13 @@ def process_obs(obs: Data) -> Batch:
 
 
 def process_act_masks(obs: Data) -> Tensor:
-    return obs.action_mask
+    return obs.action_mask.bool()
 
 
 if __name__ == "__main__":
     cfg: Config = parse_args(Config)
     device = torch.device(cfg.device)
+    assert not (cfg.use_traj_returns and cfg.use_potential), "Trajectory returns can only be used sparsely"
 
     wandb.init(
         project="kitbasher",
@@ -350,7 +352,7 @@ if __name__ == "__main__":
         obs = process_obs(obs_)
         mask = process_act_masks(obs_)
         warmup_steps = int(cfg.buffer_size / cfg.train_steps)
-        rewards_seen = 0.0
+        traj_id = 0
         for step in tqdm(range(warmup_steps + cfg.iterations), position=0):
             train_step = max(step - warmup_steps, 0)
             percent_done = max((step - warmup_steps) / cfg.iterations, 0)
@@ -367,7 +369,9 @@ if __name__ == "__main__":
                             [i for i, b in enumerate((~mask.bool()).tolist()) if b]
                         )
                     else:
-                        action, _ = get_action(q_net, obs.to(device), mask.to(device))
+                        obs.to(device)
+                        action, _ = get_action(q_net, obs, mask.to(device))
+                        obs.to("cpu")
                     obs_, reward, done, trunc, info_ = env.step(action)
 
                     # Normalize reward if last step
@@ -390,13 +394,14 @@ if __name__ == "__main__":
                                 else ((not cfg.use_potential) and (not (done or trunc)))
                             )
                         ],
-                        [1.0 if done or trunc else last_step_sample_bonus]
+                        [1.0 if done or trunc else last_step_sample_bonus],
+                        [traj_id]
                     )
                     scorer.update(buffer)
                     
                     # Send model to be scored (may be a no-op)
                     if cfg.use_potential or (done or trunc):
-                        scorer.push_model(env.model, inserted_idx, env.label_idx)
+                        scorer.push_model(env.model, inserted_idx, env.label_idx, traj_id)
 
                     obs = next_obs
                     mask = next_mask
@@ -404,8 +409,9 @@ if __name__ == "__main__":
                         obs_, info = env.reset()
                         obs = process_obs(obs_)
                         mask = process_act_masks(obs_)
-
-                    rewards_seen += reward
+                        if not cfg.distr_scorer and cfg.use_traj_returns:
+                            buffer.set_traj_return(traj_id, reward)
+                        traj_id = (traj_id + 1) % cfg.buffer_size
 
             # Train
             if buffer.filled:
@@ -422,12 +428,12 @@ if __name__ == "__main__":
                     cfg.train_iters,
                     cfg.train_batch_size,
                     cfg.discount,
+                    cfg.use_traj_returns,
                 )
 
                 log_dict = {
                     "avg_q_loss": total_q_loss / cfg.train_iters,
                     "q_lr": q_opt.param_groups[-1]["lr"],
-                    "rewards_seen": rewards_seen,
                 }
 
                 # Evaluate the network's performance after this training iteration.

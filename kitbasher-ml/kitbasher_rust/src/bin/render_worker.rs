@@ -20,6 +20,7 @@ struct Args {
 struct RenderMessage {
     buffer_idx: u32,
     label_idx: u32,
+    traj_id: u32,
     prompts: Vec<String>,
     part_configs: Vec<String>,
     scorer_fn: String,
@@ -29,6 +30,7 @@ struct RenderMessage {
 struct ScorerMessage {
     buffer_idx: u32,
     label_idx: u32,
+    traj_id: u32,
     prompts: Vec<String>,
     images: Vec<String>,
     scorer_fn: String,
@@ -74,6 +76,7 @@ fn main() {
         let scorer_msg = ScorerMessage {
             buffer_idx: render_msg.buffer_idx,
             label_idx: render_msg.label_idx,
+            traj_id: render_msg.traj_id,
             prompts: render_msg.prompts,
             images: vec![
                 BASE64_STANDARD.encode(img_buffers.0),
