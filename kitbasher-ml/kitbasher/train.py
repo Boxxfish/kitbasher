@@ -104,9 +104,10 @@ class Config(BaseModel):
     part_emb_size: int = 32
     hidden_dim: int = 64
     last_step_sample_bonus: float = 1.0 # How many times likely the final step will be sampled compared to previous steps
+    last_step_sample_bonus_start: float = 1.0 # Last step sample bonus at the start; will anneal to `last_step_sample_bonus`
+    last_step_sample_bonus_start_steps: int = 0 # Annealing time for last step sample bonus
     add_steps: bool = False
     device: str = "cuda"
-
 
 class ExpMeta(BaseModel):
     args: Config
@@ -334,6 +335,7 @@ if __name__ == "__main__":
             feature_extractor=feature_extractor,
         )
         q_net_target = copy.deepcopy(q_net)
+        q_net.to(device)
         q_net_target.to(device)
         q_opt = torch.optim.Adam(q_net.parameters(), lr=cfg.q_lr)
 
@@ -348,9 +350,11 @@ if __name__ == "__main__":
         obs = process_obs(obs_)
         mask = process_act_masks(obs_)
         warmup_steps = int(cfg.buffer_size / cfg.train_steps)
+        rewards_seen = 0.0
         for step in tqdm(range(warmup_steps + cfg.iterations), position=0):
             train_step = max(step - warmup_steps, 0)
             percent_done = max((step - warmup_steps) / cfg.iterations, 0)
+            last_step_sample_bonus = cfg.last_step_sample_bonus + (cfg.last_step_sample_bonus_start - cfg.last_step_sample_bonus) * max(0, 1 - (train_step / cfg.last_step_sample_bonus_start_steps))
 
             # Collect experience
             with torch.no_grad():
@@ -363,7 +367,7 @@ if __name__ == "__main__":
                             [i for i, b in enumerate((~mask.bool()).tolist()) if b]
                         )
                     else:
-                        action, _ = get_action(q_net, obs, mask)
+                        action, _ = get_action(q_net, obs.to(device), mask.to(device))
                     obs_, reward, done, trunc, info_ = env.step(action)
 
                     # Normalize reward if last step
@@ -386,7 +390,7 @@ if __name__ == "__main__":
                                 else ((not cfg.use_potential) and (not (done or trunc)))
                             )
                         ],
-                        [1.0 if done or trunc else cfg.last_step_sample_bonus]
+                        [1.0 if done or trunc else last_step_sample_bonus]
                     )
                     scorer.update(buffer)
                     
@@ -400,6 +404,8 @@ if __name__ == "__main__":
                         obs_, info = env.reset()
                         obs = process_obs(obs_)
                         mask = process_act_masks(obs_)
+
+                    rewards_seen += reward
 
             # Train
             if buffer.filled:
@@ -421,6 +427,7 @@ if __name__ == "__main__":
                 log_dict = {
                     "avg_q_loss": total_q_loss / cfg.train_iters,
                     "q_lr": q_opt.param_groups[-1]["lr"],
+                    "rewards_seen": rewards_seen,
                 }
 
                 # Evaluate the network's performance after this training iteration.
@@ -438,7 +445,7 @@ if __name__ == "__main__":
                             steps_taken = 0
                             episode_reward = 0.0
                             for _ in range(cfg.max_eval_steps):
-                                action, q_val = get_action(q_net, eval_obs, eval_mask)
+                                action, q_val = get_action(q_net, eval_obs.to(device), eval_mask.to(device))
                                 pred_reward_total += q_val
                                 obs_, reward, done, trunc, _ = test_env.step(action)
                                 eval_obs = eval_obs = process_obs(obs_)
@@ -462,7 +469,8 @@ if __name__ == "__main__":
                             "eval_min_reward": min_reward_total,
                             "avg_eval_episode_predicted_reward": pred_reward_total
                             / cfg.eval_steps,
-                            "eval_images": sum([[wandb.Image(img, caption=f"{k}: {score}") for (score, img) in imgs] for k, imgs in images.items() if len(imgs) > 0], [])
+                            "eval_images": sum([[wandb.Image(img, caption=f"{k}: {score}") for (score, img) in imgs] for k, imgs in images.items() if len(imgs) > 0], []),
+                            "last_step_sample_bonus": last_step_sample_bonus,
                         }
                     )
 

@@ -24,8 +24,6 @@ def train_dqn(
     """
     total_q_loss = 0.0
     q_net.train()
-    if device.type != "cpu":
-        q_net.to(device)
 
     total_q_loss = 0.0
     for _ in range(train_iters):
@@ -84,7 +82,5 @@ def train_dqn(
         q_opt.step()
         total_q_loss += q_loss.item()
 
-    if device.type != "cpu":
-        q_net.cpu()
     q_net.eval()
     return total_q_loss
