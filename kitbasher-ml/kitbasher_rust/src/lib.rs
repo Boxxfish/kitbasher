@@ -1,4 +1,6 @@
-use bevy::math::{Quat, Vec3};
+use std::{collections::HashMap, f32::consts::PI};
+
+use bevy::math::{Mat3, Quat, Vec3};
 use kitbasher_game::engine::{Axis, Connection, Connector, KBEngine, PlacedConfig, AABB};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -246,6 +248,42 @@ impl From<PyPlacedConfig> for PlacedConfig {
 }
 
 #[pyclass]
+#[derive(Debug, Clone)]
+pub struct PartReference {
+    part_id: usize,
+    pos_offset_x: f32,
+    pos_offset_y: f32,
+    pos_offset_z: f32,
+    rot_offset_x: u8,
+    rot_offset_y: u8,
+    rot_offset_z: u8,
+}
+
+#[pymethods]
+impl PartReference {
+    #[new]
+    fn new(
+        part_id: usize,
+        pos_offset_x: f32,
+        pos_offset_y: f32,
+        pos_offset_z: f32,
+        rot_offset_x: u8,
+        rot_offset_y: u8,
+        rot_offset_z: u8,
+    ) -> PartReference {
+        PartReference {
+            part_id,
+            pos_offset_x,
+            pos_offset_y,
+            pos_offset_z,
+            rot_offset_x,
+            rot_offset_y,
+            rot_offset_z,
+        }
+    }
+}
+
+#[pyclass]
 pub struct EngineWrapper {
     engine: KBEngine,
 }
@@ -311,6 +349,68 @@ impl EngineWrapper {
                 .collect(),
             bboxes: part.bboxes.clone().iter().map(|x| (*x).into()).collect(),
             connections: vec![None; part.connectors.len()],
+        }
+    }
+
+    // Constructs the ldraw model in the engine.
+    pub fn load_ldraw(&mut self, path: &str, ref_map: HashMap<String, PartReference>) {
+        let pos_scale = 0.4;
+        let file_bytes = std::fs::read(path).unwrap();
+        let commands = weldr::parse_raw(&file_bytes).unwrap();
+        for cmd in &commands {
+            if let weldr::Command::SubFileRef(cmd) = cmd {
+                if let weldr::SubFileRef::UnresolvedRef(subref) = &cmd.file {
+                    let subref = subref.replace(".dat", "");
+                    let part_ref = ref_map
+                        .get(&subref)
+                        .unwrap_or_else(|| panic!("\"{subref}\" was not present in `ref_map`."));
+                    let part_id = part_ref.part_id;
+                    let part = self.engine.get_part(part_id);
+                    let pos_offset = Vec3::new(part_ref.pos_offset_x, part_ref.pos_offset_y, part_ref.pos_offset_z);
+                    // TODO: Need to specify a quat for each part in ref_map to know the initial rotation,
+                    // and a vec3 to determine the offset from the center of the model
+                    let pos = pos_offset + Vec3::new(cmd.pos.x, -cmd.pos.y, cmd.pos.z) * pos_scale; // ldraw uses -Y
+                    let xform = Mat3::from_cols(
+                        Vec3::new(cmd.row0.x, cmd.row0.y, cmd.row0.z),
+                        Vec3::new(cmd.row1.x, cmd.row1.y, cmd.row1.z),
+                        Vec3::new(cmd.row2.x, cmd.row2.y, cmd.row2.z),
+                    ).transpose();
+                    let rot = Quat::from_mat3(&xform);
+                    if true {
+                        //self.engine.get_model().is_empty() {
+                        let (x_rot, y_rot, z_rot) = rot.to_euler(bevy::math::EulerRot::XYZ);
+                        let x_rot = (x_rot / (PI / 2.)).round() as i32;
+                        let y_rot = (y_rot / (PI / 2.)).round() as i32;
+                        let z_rot = (z_rot / (PI / 2.)).round() as i32;
+                        let (new_part, rotation) =
+                            self.engine.rotate_part(part, x_rot, y_rot, z_rot);
+                        let config = PlacedConfig {
+                            bboxes: new_part.bboxes.clone(),
+                            connections: new_part.connectors.iter().map(|_| None).collect(),
+                            connectors: new_part.connectors.clone(),
+                            part_id,
+                            position: pos,
+                            rotation,
+                        };
+                        self.engine.place_part(&config);
+                    }
+                    // Possibly don't need this?
+                    // May replace with simply augmenting the above code block to support connections.
+                    // else {
+                    //     let candidates = self.engine.gen_candidates();
+                    //     for c in &candidates {
+                    //         let pos_eq = c
+                    //             .position
+                    //             .abs_diff_eq(pos, 0.01);
+                    //         let rot_eq = c.rotation.abs_diff_eq(rot, 0.01);
+                    //         if c.part_id == part_id && pos_eq && rot_eq {
+                    //             self.engine.place_part(c);
+                    //             break;
+                    //         }
+                    //     }
+                    // }
+                }
+            }
         }
     }
 }
@@ -602,5 +702,6 @@ fn kitbasher_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyConnection>()?;
     m.add_class::<PyConnector>()?;
     m.add_class::<Renderer>()?;
+    m.add_class::<PartReference>()?;
     Ok(())
 }

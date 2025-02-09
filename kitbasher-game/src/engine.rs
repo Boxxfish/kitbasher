@@ -73,16 +73,15 @@ impl KBEngine {
         configs
     }
 
-    /// Rotates a part and returns all valid configurations for the part.
-    fn rotate_and_gen_next(
+    /// Rotates a part and returns it as a new part. Also returns the rotation as a quat.
+    /// `part` must not be already rotated.
+    pub fn rotate_part(
         &self,
-        part_id: usize,
         part: &PartData,
         x_rot: i32,
         y_rot: i32,
         z_rot: i32,
-    ) -> Vec<PlacedConfig> {
-        let mut configs = Vec::new();
+    ) -> (PartData, Quat) {
         let mut connectors = Vec::new();
         for connector in &part.connectors {
             let mut axis = connector.axis;
@@ -152,6 +151,23 @@ impl KBEngine {
             invar_y: part.invar_y,
             invar_z: part.invar_z,
         };
+        let rotation = Quat::from_axis_angle(Vec3::Y, y_rot as f32 * (std::f32::consts::PI / 2.))
+            * Quat::from_axis_angle(Vec3::X, x_rot as f32 * (std::f32::consts::PI / 2.))
+            * Quat::from_axis_angle(Vec3::Z, z_rot as f32 * (std::f32::consts::PI / 2.));
+        return (new_part, rotation);
+    }
+
+    /// Rotates a part and returns all valid configurations for the part.
+    fn rotate_and_gen_next(
+        &self,
+        part_id: usize,
+        part: &PartData,
+        x_rot: i32,
+        y_rot: i32,
+        z_rot: i32,
+    ) -> Vec<PlacedConfig> {
+        let mut configs = Vec::new();
+        let (new_part, rotation) = self.rotate_part(part, x_rot, y_rot, z_rot);
 
         // Check if part can be attached to existing parts
         for (placed_id, placed) in self.model.iter().enumerate() {
@@ -196,16 +212,7 @@ impl KBEngine {
                         let new_placed = PlacedConfig {
                             position: part_world_pos,
                             part_id,
-                            rotation: Quat::from_axis_angle(
-                                Vec3::Y,
-                                y_rot as f32 * (std::f32::consts::PI / 2.),
-                            ) * Quat::from_axis_angle(
-                                Vec3::X,
-                                x_rot as f32 * (std::f32::consts::PI / 2.),
-                            ) * Quat::from_axis_angle(
-                                Vec3::Z,
-                                z_rot as f32 * (std::f32::consts::PI / 2.),
-                            ),
+                            rotation,
                             connectors: new_part.connectors.clone(),
                             bboxes: new_part.bboxes.clone(),
                             connections,

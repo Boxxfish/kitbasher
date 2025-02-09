@@ -44,8 +44,24 @@ class PyPlacedConfig:
     @staticmethod
     def from_json(s: str) -> PyPlacedConfig: ...
 
+class PartReference:
+    def __init__(
+        part_id: int,
+        pos_offset_x: float,
+        pos_offset_y: float,
+        pos_offset_z: float,
+        rot_offset_x: int,
+        rot_offset_y: int,
+        rot_offset_z: int,
+    ): ...
+
 class EngineWrapper:
-    def __init__(self, part_paths: List[str], connect_rules: List[Tuple[int, int]], use_mirror: bool): ...
+    def __init__(
+        self,
+        part_paths: List[str],
+        connect_rules: List[Tuple[int, int]],
+        use_mirror: bool,
+    ): ...
     def clear_model(self): ...
     def gen_candidates(self) -> List[PyPlacedConfig]: ...
     def get_model(self) -> List[PyPlacedConfig]: ...
@@ -54,6 +70,7 @@ class EngineWrapper:
     def create_config(
         self, part_id: int, x: float, y: float, z: float
     ) -> PyPlacedConfig: ...
+    def load_ldraw(self, path: str, ref_map: Dict[str, int]): ...
 
 class Renderer:
     def __init__(self, part_paths: List[str], use_mirror: bool): ...
