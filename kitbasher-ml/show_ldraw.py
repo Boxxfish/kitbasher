@@ -17,24 +17,32 @@ if __name__ == "__main__":
 
     base_path = "../kitbasher-game/assets/models/{name}.ron"
     ldraw_to_part = {
-        "3005": "1x1",
-        "3040b": "2x1_slanted",
-        "3004": "2x1",
-        "30000": "2x2_axle",
-        "3039": "2x2_slanted",
-        "3003": "2x2",
-        "3010": "4x1",
-        "72206p01": "wheel",
+        "3005": ("1x1", (0.0, 3.0, 0.0), (0, 0, 0)),
+        "3040b": ("2x1_slanted", (0.0, 3.0, 2.5), (0, 2, 0)),
+        "3004": ("2x1", (0.0, 3.0, 0.0), (0, 1, 0)),
+        "30000": ("2x2_axle", (0.0, 3.0, 0.0), (0, 0, 0)),
+        "3039": ("2x2_slanted", (0.0, 3.0, 2.5), (0, 2, 0)),
+        "3003": ("2x2", (0.0, 3.0, 0.0), (0, 0, 0)),
+        "3010": ("4x1", (0.0, 3.0, 0.0), (0, 1, 0)),
+        "72206p01": ("wheel", (0.0, 0.0, 0.0), (0, 1, 0)),
     }
     ref_map = {
-        k: PartReference(BLOCK_PARTS.index(base_path.format(name=v)), 0, 0, 0, 0, 0, 0)
-        for k, v in ldraw_to_part.items()
+        k: PartReference(
+            BLOCK_PARTS.index(base_path.format(name=part_name)),
+            x,
+            y,
+            z,
+            x_rot,
+            y_rot,
+            z_rot,
+        )
+        for k, (part_name, (x, y, z), (x_rot, y_rot, z_rot)) in ldraw_to_part.items()
     }
     engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES, False)
-    engine.load_ldraw(cfg.model, ref_map)
+    engine.load_ldraw(cfg.model, ref_map, True)
     model = engine.get_model()
     renderer = Renderer(
-        [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], False
+        [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], True
     )
     buffers = renderer.render_model(model)
     front, back = tuple(

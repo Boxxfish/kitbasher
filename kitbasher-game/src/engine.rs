@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// An instance of the kitbasher engine.
 pub struct KBEngine {
     parts: Vec<PartData>,
-    connect_rules: Vec<[usize; 2]>,
+    pub connect_rules: Vec<[usize; 2]>,
     model: Vec<PlacedConfig>,
     use_mirror: bool,
 }
