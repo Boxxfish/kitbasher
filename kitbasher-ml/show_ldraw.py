@@ -40,6 +40,7 @@ if __name__ == "__main__":
     }
     engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES, False)
     engine.load_ldraw(cfg.model, ref_map, True)
+    engine.shuffle_model_parts()
     model = engine.get_model()
     renderer = Renderer(
         [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], True

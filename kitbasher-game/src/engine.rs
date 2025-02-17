@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct KBEngine {
     parts: Vec<PartData>,
     pub connect_rules: Vec<[usize; 2]>,
-    model: Vec<PlacedConfig>,
+    pub model: Vec<PlacedConfig>,
     use_mirror: bool,
 }
 

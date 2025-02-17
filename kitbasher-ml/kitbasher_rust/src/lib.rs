@@ -1,8 +1,12 @@
-use std::{collections::HashMap, f32::consts::PI};
+use std::{
+    collections::{HashMap, VecDeque},
+    f32::consts::PI,
+};
 
 use bevy::math::{Mat3, Quat, Vec3};
 use kitbasher_game::engine::{Axis, Connection, Connector, KBEngine, PartData, PlacedConfig, AABB};
 use pyo3::prelude::*;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use three_d::*;
 
@@ -435,7 +439,7 @@ impl EngineWrapper {
 
         // Connect parts together
         // Assumption: Only two connectors ever overlap each other
-        let mut model = self.engine.get_model().to_vec();
+        let model = &mut self.engine.model;
         for part1_idx in 0..model.len() {
             for c1_idx in 0..model[part1_idx].connectors.len() {
                 if model[part1_idx].connections[c1_idx].is_some() {
@@ -481,6 +485,77 @@ impl EngineWrapper {
                 }
             }
         }
+    }
+
+    /// Shuffles the indices of the parts of the model.
+    /// This is useful when popping off the last pieces of the model to get a sequence of partial build states.
+    /// The new model is guaranteed to be buildable (e.g. all parts after the first part connect to some part of the model).
+    /// Additionally, the first part will be unchanged.
+    pub fn shuffle_model_parts(&mut self) {
+        // Determine new indices
+        let mut rng = rand::thread_rng();
+        let mut new_to_old: Vec<_> = vec![0]; // the new `i` is the old `new_idxs[i]`
+        for _ in 1..self.engine.model.len() {
+            let mut candidates = Vec::new();
+            for old_idx in 0..self.engine.model.len() {
+                // Skip if this part is already in the new model
+                if new_to_old.contains(&old_idx) {
+                    continue;
+                }
+                // Add to candidates if this part connects to any parts in the new model
+                for conn in self.engine.model[old_idx].connections.iter().flatten() {
+                    println!("{}", conn.placed_id);
+                    if new_to_old.contains(&conn.placed_id) {
+                        candidates.push(old_idx);
+                        break;
+                    }
+                }
+            }
+            new_to_old.push(*candidates.choose(&mut rng).unwrap());
+            println!("{new_to_old:?}");
+        }
+        let mut old_to_new: Vec<_> = (0..self.engine.get_model().len()).map(|_| 0).collect();
+        for (new_idx, &old_idx) in new_to_old.iter().enumerate() {
+            old_to_new[old_idx] = new_idx;
+        }
+
+        // Create new model
+        let old_model = self.engine.get_model();
+        let mut new_model = Vec::new();
+        for old_idx in &new_to_old {
+            let mut new_part = old_model[*old_idx].clone();
+            for conn_idx in 0..new_part.connections.len() {
+                if let Some(conn) = &mut new_part.connections[conn_idx] {
+                    conn.placed_id = old_to_new[conn.placed_id];
+                }
+            }
+            new_model.push(new_part);
+        }
+
+        self.engine.set_model(&new_model);
+    }
+
+    /// Pops off the last part of the model and returns it as a part config.
+    /// This can be directly added to the model again via `place_part`.
+    /// Connections to the popped part will be removed from the model, but the
+    /// returned config will retain these connections (the same as any other part candidate).
+    pub fn pop_part(&mut self) -> PyPlacedConfig {
+        let popped_idx = self.engine.model.len() - 1;
+        let popped_cfg = self
+            .engine
+            .model
+            .pop()
+            .expect("Must be at least one part on model.");
+        for part in &mut self.engine.model {
+            for conn_idx in 0..part.connections.len() {
+                if let Some(conn) = &part.connections[conn_idx] {
+                    if conn.placed_id == popped_idx {
+                        part.connections[conn_idx] = None;
+                    }
+                }
+            }
+        }
+        popped_cfg.into()
     }
 }
 
