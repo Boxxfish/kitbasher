@@ -504,7 +504,6 @@ impl EngineWrapper {
                 }
                 // Add to candidates if this part connects to any parts in the new model
                 for conn in self.engine.model[old_idx].connections.iter().flatten() {
-                    println!("{}", conn.placed_id);
                     if new_to_old.contains(&conn.placed_id) {
                         candidates.push(old_idx);
                         break;
@@ -512,7 +511,6 @@ impl EngineWrapper {
                 }
             }
             new_to_old.push(*candidates.choose(&mut rng).unwrap());
-            println!("{new_to_old:?}");
         }
         let mut old_to_new: Vec<_> = (0..self.engine.get_model().len()).map(|_| 0).collect();
         for (new_idx, &old_idx) in new_to_old.iter().enumerate() {

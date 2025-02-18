@@ -5,7 +5,7 @@ import numpy as np
 from pydantic import BaseModel
 from kitbasher.env import BLOCK_CONNECT_RULES, BLOCK_PARTS
 from kitbasher.utils import parse_args
-from kitbasher_rust import EngineWrapper, Renderer, PartReference
+from kitbasher_rust import EngineWrapper, PyPlacedConfig, Renderer, PartReference
 
 
 class Config(BaseModel):
@@ -42,12 +42,23 @@ if __name__ == "__main__":
     engine.load_ldraw(cfg.model, ref_map, True)
     engine.shuffle_model_parts()
     model = engine.get_model()
+
+    # Construct trajectory
+    parts = list[PyPlacedConfig]()
+    for _ in range(1, len(model)):
+        parts.append(engine.pop_part())
+
+    # Render model, step by step
     renderer = Renderer(
         [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], True
     )
-    buffers = renderer.render_model(model)
-    front, back = tuple(
-        np.array(b).reshape([512, 512, 4])[::-1, :, :3] for b in buffers
-    )
-    plt.imshow(front)
-    plt.show()
+    while len(parts) > 0:
+        part = parts.pop()
+        engine.place_part(part)
+        model = engine.get_model()
+        buffers = renderer.render_model(model)
+        front, back = tuple(
+            np.array(b).reshape([512, 512, 4])[::-1, :, :3] for b in buffers
+        )
+        plt.imshow(front)
+        plt.show()
