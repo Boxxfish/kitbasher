@@ -414,7 +414,7 @@ impl EngineWrapper {
                         let mut crossed = false;
                         for bbox in &new_part.bboxes {
                             let x = bbox.center.x + new_position.x - bbox.half_sizes.x;
-                            if x < x_origin + -0.001 {
+                            if x < x_origin - 0.1 {
                                 crossed = true;
                                 break;
                             }
@@ -458,7 +458,7 @@ impl EngineWrapper {
                         let c2 = &part2.connectors[c2_idx];
                         let c1_world_pos = model[part1_idx].position + c1.position;
                         let c2_world_pos = part2.position + c2.position;
-                        if c1_world_pos.abs_diff_eq(c2_world_pos, 2.)
+                        if c1_world_pos.abs_diff_eq(c2_world_pos, 4.)
                             && c1.axis == c2.axis
                             && c1.side_a != c2.side_a
                             && (self
@@ -478,7 +478,7 @@ impl EngineWrapper {
                                 placed_id: part1_idx,
                                 connector_id: c1_idx,
                             });
-                            println!("Connected {part1_idx} to {part2_idx}");
+                            // println!("Connected {part1_idx} to {part2_idx}");
                             break 'find_conn;
                         }
                     }
@@ -510,6 +510,7 @@ impl EngineWrapper {
                     }
                 }
             }
+            // println!("{new_to_old:?}");
             new_to_old.push(*candidates.choose(&mut rng).unwrap());
         }
         let mut old_to_new: Vec<_> = (0..self.engine.get_model().len()).map(|_| 0).collect();

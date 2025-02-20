@@ -40,18 +40,26 @@ if __name__ == "__main__":
     }
     engine = EngineWrapper(BLOCK_PARTS, BLOCK_CONNECT_RULES, False)
     engine.load_ldraw(cfg.model, ref_map, True)
-    engine.shuffle_model_parts()
+    renderer = Renderer(
+        [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], True
+    )
     model = engine.get_model()
 
+    # Render model as test
+    buffers = renderer.render_model(model)
+    front, back = tuple(
+        np.array(b).reshape([512, 512, 4])[::-1, :, :3] for b in buffers
+    )
+    plt.imshow(front)
+    plt.show()
+
     # Construct trajectory
+    engine.shuffle_model_parts()
     parts = list[PyPlacedConfig]()
     for _ in range(1, len(model)):
         parts.append(engine.pop_part())
 
     # Render model, step by step
-    renderer = Renderer(
-        [part[: part.rindex(".")] + ".glb" for part in BLOCK_PARTS], True
-    )
     while len(parts) > 0:
         part = parts.pop()
         engine.place_part(part)
