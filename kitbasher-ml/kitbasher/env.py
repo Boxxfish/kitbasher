@@ -5,13 +5,17 @@ import gymnasium as gym
 import numpy as np
 import torch
 from torch import Tensor
-from kitbasher_rust import EngineWrapper, PyAABB, PyPlacedConfig
+from kitbasher_rust import (
+    EngineWrapper,
+    PyAABB,
+    PyPlacedConfig,
+    PartReference,
+    Renderer,
+)
 from torch_geometric.data import Data  # type: ignore
 import rerun as rr  # type: ignore
 import open3d as o3d
 from dataclasses import dataclass
-
-from kitbasher_rust.kitbasher_rust import Renderer  # type: ignore
 
 BLOCK_PARTS = [
     "../kitbasher-game/assets/models/1x1.ron",
@@ -29,6 +33,31 @@ MAX_CONNECTIONS = 12
 CONNECTION_DIM = 3 + 3 + 3 + 1 + 1
 NODE_DIM = 6 + 4 + 1 + MAX_CONNECTIONS * CONNECTION_DIM
 MAX_NODES = 10_000
+
+
+BASE_PATH = "../kitbasher-game/assets/models/{name}.ron"
+LDRAW_TO_PART = {
+    "3005": ("1x1", (0.0, 3.0, 0.0), (0, 0, 0)),
+    "3040b": ("2x1_slanted", (0.0, 3.0, 2.5), (0, 2, 0)),
+    "3004": ("2x1", (0.0, 3.0, 0.0), (0, 1, 0)),
+    "30000": ("2x2_axle", (0.0, 3.0, 0.0), (0, 0, 0)),
+    "3039": ("2x2_slanted", (0.0, 3.0, 2.5), (0, 2, 0)),
+    "3003": ("2x2", (0.0, 3.0, 0.0), (0, 0, 0)),
+    "3010": ("4x1", (0.0, 3.0, 0.0), (0, 1, 0)),
+    "72206p01": ("wheel", (0.0, 0.0, 0.0), (0, 1, 0)),
+}
+REF_MAP = {
+    k: PartReference(
+        BLOCK_PARTS.index(BASE_PATH.format(name=part_name)),
+        x,
+        y,
+        z,
+        x_rot,
+        y_rot,
+        z_rot,
+    )
+    for k, (part_name, (x, y, z), (x_rot, y_rot, z_rot)) in LDRAW_TO_PART.items()
+}
 
 
 @dataclass
@@ -98,7 +127,8 @@ class ConstructionEnv(gym.Env):
         self.max_steps = max_steps
         step_dim = 0 if not add_steps else self.max_steps
         self.observation_space = gym.spaces.Graph(
-            node_space=gym.spaces.Box(-1, 1, [len(prompts) + NODE_DIM + step_dim]), edge_space=None
+            node_space=gym.spaces.Box(-1, 1, [len(prompts) + NODE_DIM + step_dim]),
+            edge_space=None,
         )
         self.action_space = gym.spaces.Discrete(MAX_NODES)
         self.score_fn = score_fn
@@ -114,6 +144,7 @@ class ConstructionEnv(gym.Env):
             )
         self.renderer = renderer
         self.label_idx = 0
+        self.traj_parts: List[PyPlacedConfig] = []
         self.visualize = visualize
         if visualize:
             rr.init("Construction")
@@ -132,6 +163,9 @@ class ConstructionEnv(gym.Env):
             )
 
     def step(self, action: int) -> tuple[Data, float, bool, bool, dict[str, Any]]:
+        if action != 0:
+            self.traj_parts = []
+        
         config = self.place_configs[action - len(self.model)]
         self.engine.place_part(config)
         self.timer += 1
@@ -176,6 +210,28 @@ class ConstructionEnv(gym.Env):
         self.prompt = self.prompts[self.label_idx]
         return obs, {}
 
+    def reset_with_model(
+        self, model_path: str, label_idx: int
+    ) -> tuple[Data, dict[str, Any]]:
+        """Resets such that this episode can construct the model."""
+        self.engine.clear_model()
+
+        # Construct trajectory
+        self.engine.load_ldraw(model_path, REF_MAP, True)
+        model = self.engine.get_model()
+        self.engine.shuffle_model_parts()
+        self.traj_parts = []
+        for _ in range(1, len(model)):
+            self.traj_parts.append(self.engine.pop_part())
+
+        self.timer = 0
+        obs = self.gen_obs()
+        if self.use_potential:
+            self.last_score, _ = self.score_fn(self.model, obs, self, False)
+        self.label_idx = label_idx
+        self.prompt = self.prompts[self.label_idx]
+        return obs, {}
+
     def screenshot(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         Returns a front and back render of the model.
@@ -194,6 +250,10 @@ class ConstructionEnv(gym.Env):
         place_configs = self.engine.gen_candidates()
         random.shuffle(place_configs)
         self.place_configs = place_configs[: self.max_actions_per_step]
+
+        # If `traj_parts` contains elements, replace the first place config
+        if len(self.traj_parts) > 0:
+            self.place_configs[0] = self.traj_parts.pop(0)
 
         # Create graph features
         part_ids = []
@@ -262,7 +322,7 @@ class ConstructionEnv(gym.Env):
             last_score=self.last_score,
             label_idx=self.label_idx,
         )
-    
+
     def load_state(self, state: EnvState):
         self.engine.set_model(state.model)
         self.model = clone_placed_list(state.model)
@@ -284,6 +344,7 @@ def merge_bboxes(bboxes: List[PyAABB]) -> Tuple[List[float], List[float]]:
         min_bbox = [min(new, old) for new, old in zip(min_, min_bbox)]
         max_bbox = [max(new, old) for new, old in zip(max_, max_bbox)]
     return min_bbox, max_bbox
+
 
 def clone_placed_list(ps: List[PyPlacedConfig]) -> List[PyPlacedConfig]:
     return [PyPlacedConfig.from_json(p.to_json()) for p in ps]

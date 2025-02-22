@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import random
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -59,14 +60,32 @@ if __name__ == "__main__":
     for _ in range(1, len(model)):
         parts.append(engine.pop_part())
 
-    # Render model, step by step
-    while len(parts) > 0:
-        part = parts.pop()
+    # Reconstruct object, with possible divergence
+    diverged = False
+    for _ in range(16):
+        if random.random() < 0.88 and not diverged:
+            part = parts.pop()
+        else:
+            candidates = engine.gen_candidates()
+            part = random.choice(candidates)
+            diverged = True
         engine.place_part(part)
-        model = engine.get_model()
-        buffers = renderer.render_model(model)
-        front, back = tuple(
-            np.array(b).reshape([512, 512, 4])[::-1, :, :3] for b in buffers
-        )
-        plt.imshow(front)
-        plt.show()
+    model = engine.get_model()
+    buffers = renderer.render_model(model)
+    front, back = tuple(
+        np.array(b).reshape([512, 512, 4])[::-1, :, :3] for b in buffers
+    )
+    plt.imshow(front)
+    plt.show()
+
+    # Render model, step by step
+    # while len(parts) > 0:
+    #     part = parts.pop()
+    #     engine.place_part(part)
+    #     model = engine.get_model()
+    #     buffers = renderer.render_model(model)
+    #     front, back = tuple(
+    #         np.array(b).reshape([512, 512, 4])[::-1, :, :3] for b in buffers
+    #     )
+    #     plt.imshow(front)
+    #     plt.show()

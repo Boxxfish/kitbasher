@@ -50,6 +50,14 @@ LABELS = [
     "hot air balloon",
 ]
 
+RAND_MODELS = [
+    ("./ldraw_models/skateboard1.ldr", 8),
+    ("./ldraw_models/skateboard2.ldr", 8),
+    ("./ldraw_models/rowboat1.ldr", 1),
+    ("./ldraw_models/rowboat2.ldr", 1),
+    ("./ldraw_models/spaceship1.ldr", 7),
+    ("./ldraw_models/spaceship2.ldr", 7),
+]
 
 # Hyperparameters
 class Config(BaseModel):
@@ -340,6 +348,55 @@ if __name__ == "__main__":
         obs = process_obs(obs_)
         mask = process_act_masks(obs_)
         warmup_steps = int(cfg.buffer_size / cfg.train_steps)
+
+        # If we're using our manual model policy, fill the buffer with this data
+        if True:
+            while not buffer.filled:
+                with torch.no_grad():
+                    if random.random() < 0.88:
+                        action = 0
+                    else:
+                        action = random.choice(
+                            [i for i, b in enumerate((~mask.bool()).tolist()) if b]
+                        )
+                    obs_, reward, done, trunc, info_ = env.step(action)
+
+                    # Normalize reward if last step
+                    if (done or trunc) and not cfg.use_potential:
+                        reward = (reward - cfg.norm_min) / (cfg.norm_max - cfg.norm_min)
+
+                    next_obs = process_obs(obs_)
+                    next_mask = process_act_masks(obs_)
+                    inserted_idx = buffer.next
+                    buffer.insert_step(
+                        [obs.to_data_list()[0]],
+                        [next_obs.to_data_list()[0]],
+                        torch.tensor([action]),
+                        [reward],
+                        [done],
+                        [
+                            (
+                                True
+                                if not cfg.distr_scorer
+                                else ((not cfg.use_potential) and (not (done or trunc)))
+                            )
+                        ],
+                    )
+                    scorer.update(buffer)
+                    
+                    # Send model to be scored (may be a no-op)
+                    if cfg.use_potential or (done or trunc):
+                        scorer.push_model(env.model, inserted_idx, env.label_idx)
+
+                    obs = next_obs
+                    mask = next_mask
+                    if done or trunc:
+                        rand_model, rand_label = random.choice(RAND_MODELS)
+                        obs_, info = env.reset_with_model(rand_model, rand_label)
+                        obs = process_obs(obs_)
+                        mask = process_act_masks(obs_)
+            warmup_steps = 0 # We'll start immediately now
+
         for step in tqdm(range(warmup_steps + cfg.iterations), position=0):
             train_step = max(step - warmup_steps, 0)
             percent_done = max((step - warmup_steps) / cfg.iterations, 0)

@@ -46,6 +46,7 @@ class PyPlacedConfig:
 
 class PartReference:
     def __init__(
+        self,
         part_id: int,
         pos_offset_x: float,
         pos_offset_y: float,
@@ -70,7 +71,7 @@ class EngineWrapper:
     def create_config(
         self, part_id: int, x: float, y: float, z: float
     ) -> PyPlacedConfig: ...
-    def load_ldraw(self, path: str, ref_map: Dict[str, int]): ...
+    def load_ldraw(self, path: str, ref_map: Dict[str, PartReference], use_mirror: bool): ...
     def shuffle_model_parts(self): ...
     def pop_part(self) -> PyPlacedConfig: ...
 
