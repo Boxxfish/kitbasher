@@ -17,8 +17,8 @@ def get_action(
 ) -> tuple[int, float]:
     q_vals = q_net(obs).squeeze(1)  # Shape: (num_nodes)
     q_vals = torch.masked_fill(q_vals, action_mask, -torch.inf)
-    action = q_vals.argmax(0).item()
-    q_val = q_vals.amax(0).item()
+    action = q_vals.argmax(0).cpu().item()
+    q_val = q_vals.amax(0).cpu().item()
     return action, q_val
 
 
