@@ -111,6 +111,7 @@ class Config(BaseModel):
     part_emb_size: int = 32
     hidden_dim: int = 64
     add_steps: bool = False
+    use_ldraw: bool = False
     device: str = "cuda"
 
 
@@ -350,7 +351,7 @@ if __name__ == "__main__":
         warmup_steps = int(cfg.buffer_size / cfg.train_steps)
 
         # If we're using our manual model policy, fill the buffer with this data
-        if True:
+        if cfg.use_ldraw:
             while not buffer.filled:
                 with torch.no_grad():
                     if random.random() < 0.88:
