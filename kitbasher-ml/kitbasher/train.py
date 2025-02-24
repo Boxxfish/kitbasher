@@ -365,14 +365,13 @@ if __name__ == "__main__":
 
         # If we're using our manual model policy, fill the buffer with this data
         if cfg.use_ldraw:
-            while not buffer.filled:
+            for _ in tqdm(range(buffer.capacity)):
                 with torch.no_grad():
+                    action_choices = [i for i, b in enumerate((~mask.bool()).tolist()) if b]
                     if random.random() < 0.88:
-                        action = 0
+                        action = action_choices[-1]
                     else:
-                        action = random.choice(
-                            [i for i, b in enumerate((~mask.bool()).tolist()) if b]
-                        )
+                        action = random.choice(action_choices)
                     obs_, reward, done, trunc, info_ = env.step(action)
 
                     # Normalize reward if last step
@@ -395,21 +394,24 @@ if __name__ == "__main__":
                                 else ((not cfg.use_potential) and (not (done or trunc)))
                             )
                         ],
+                        [1.0 if done or trunc else cfg.last_step_sample_bonus],
                         [traj_id]
                     )
                     scorer.update(buffer)
                     
                     # Send model to be scored (may be a no-op)
                     if cfg.use_potential or (done or trunc):
-                        scorer.push_model(env.model, inserted_idx, env.label_idx)
+                        scorer.push_model(env.model, inserted_idx, env.label_idx, traj_id)
 
                     obs = next_obs
                     mask = next_mask
                     if done or trunc:
-                        rand_model, rand_label = random.choice(RAND_MODELS)
-                        obs_, info = env.reset_with_model(rand_model, rand_label)
+                        obs_, info = env.reset()
                         obs = process_obs(obs_)
                         mask = process_act_masks(obs_)
+                        if not cfg.distr_scorer and cfg.use_traj_returns:
+                            buffer.set_traj_return(traj_id, reward)
+                        traj_id = (traj_id + 1) % cfg.buffer_size
             warmup_steps = 0 # We'll start immediately now
 
         for step in tqdm(range(warmup_steps + cfg.iterations), position=0):

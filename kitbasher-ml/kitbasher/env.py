@@ -165,7 +165,7 @@ class ConstructionEnv(gym.Env):
             )
 
     def step(self, action: int) -> tuple[Data, float, bool, bool, dict[str, Any]]:
-        if action != 0:
+        if action != len(self.model) + len(self.place_configs) - 1:
             self.traj_parts = []
         
         config = self.place_configs[action - len(self.model)]
@@ -255,7 +255,7 @@ class ConstructionEnv(gym.Env):
 
         # If `traj_parts` contains elements, replace the first place config
         if len(self.traj_parts) > 0:
-            self.place_configs[0] = self.traj_parts.pop(0)
+            self.place_configs[-1] = self.traj_parts.pop()
 
         # Create graph features
         part_ids = []
