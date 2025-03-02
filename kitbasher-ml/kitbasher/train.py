@@ -31,7 +31,7 @@ from kitbasher.pretraining import FeatureExtractor, Pretrained
 from kitbasher.distributed_scorer import (
     get_scorer_fn,
 )
-from kitbasher.utils import create_directory, get_action, parse_args
+from kitbasher.utils import create_directory, get_action, parse_args, polyak_avg
 from kitbasher.pretraining import ExpMeta as PretrainingExpMeta
 
 _: Any
@@ -58,6 +58,7 @@ RAND_MODELS = [
     ("./ldraw_models/spaceship1.ldr", 7),
     ("./ldraw_models/spaceship2.ldr", 7),
 ]
+
 
 # Hyperparameters
 class Config(BaseModel):
@@ -104,20 +105,29 @@ class Config(BaseModel):
     fe_path: str = ""
     freeze_fe: bool = False
     freeze_fe_for: int = -1
-    single_class: str = "" # This can be a comma separated list too
-    single_class_selected: str = "" # This can be a comma separated list too
+    single_class: str = ""  # This can be a comma separated list too
+    single_class_selected: str = ""  # This can be a comma separated list too
     distr_scorer: bool = False
     max_queued_items: int = 8
     num_render_workers: int = 2
     part_emb_size: int = 32
     hidden_dim: int = 64
-    last_step_sample_bonus: float = 1.0 # How many times likely the final step will be sampled compared to previous steps
-    last_step_sample_bonus_start: float = 1.0 # Last step sample bonus at the start; will anneal to `last_step_sample_bonus`
-    last_step_sample_bonus_start_steps: int = 0 # Annealing time for last step sample bonus
+    last_step_sample_bonus: float = (
+        1.0  # How many times likely the final step will be sampled compared to previous steps
+    )
+    last_step_sample_bonus_start: float = (
+        1.0  # Last step sample bonus at the start; will anneal to `last_step_sample_bonus`
+    )
+    last_step_sample_bonus_start_steps: int = (
+        0  # Annealing time for last step sample bonus
+    )
     add_steps: bool = False
     use_ldraw: bool = False
     use_traj_returns: bool = False
+    use_polyak: bool = False
+    polyak_tau: float = 0.005
     device: str = "cuda"
+
 
 class ExpMeta(BaseModel):
     args: Config
@@ -258,7 +268,9 @@ def process_act_masks(obs: Data) -> Tensor:
 if __name__ == "__main__":
     cfg: Config = parse_args(Config)
     device = torch.device(cfg.device)
-    assert not (cfg.use_traj_returns and cfg.use_potential), "Trajectory returns can only be used sparsely"
+    assert not (
+        cfg.use_traj_returns and cfg.use_potential
+    ), "Trajectory returns can only be used sparsely"
 
     wandb.init(
         project="kitbasher",
@@ -273,7 +285,9 @@ if __name__ == "__main__":
         labels = [c.strip() for c in cfg.single_class.split(",")]
     selected_labels = list(range(len(labels)))
     if cfg.single_class_selected:
-        selected_labels = [labels.index(c) for c in cfg.single_class_selected.split(",")]
+        selected_labels = [
+            labels.index(c) for c in cfg.single_class_selected.split(",")
+        ]
     prompts = [cfg.prompt + l for l in labels]
     score_fn, eval_score_fn, start_fn, scorer_manager = get_scorer_fn(
         score_fn_name=cfg.score_fn,
@@ -367,7 +381,9 @@ if __name__ == "__main__":
         if cfg.use_ldraw:
             for _ in tqdm(range(buffer.capacity)):
                 with torch.no_grad():
-                    action_choices = [i for i, b in enumerate((~mask.bool()).tolist()) if b]
+                    action_choices = [
+                        i for i, b in enumerate((~mask.bool()).tolist()) if b
+                    ]
                     if random.random() < 0.88:
                         action = action_choices[-1]
                     else:
@@ -395,29 +411,34 @@ if __name__ == "__main__":
                             )
                         ],
                         [1.0 if done or trunc else cfg.last_step_sample_bonus],
-                        [traj_id]
+                        [traj_id],
                     )
                     scorer.update(buffer)
-                    
+
                     # Send model to be scored (may be a no-op)
                     if cfg.use_potential or (done or trunc):
-                        scorer.push_model(env.model, inserted_idx, env.label_idx, traj_id)
+                        scorer.push_model(
+                            env.model, inserted_idx, env.label_idx, traj_id
+                        )
 
                     obs = next_obs
                     mask = next_mask
                     if done or trunc:
-                        obs_, info = env.reset()
+                        rand_model, rand_label = random.choice(RAND_MODELS)
+                        obs_, info = env.reset_with_model(rand_model, rand_label)
                         obs = process_obs(obs_)
                         mask = process_act_masks(obs_)
                         if not cfg.distr_scorer and cfg.use_traj_returns:
                             buffer.set_traj_return(traj_id, reward)
                         traj_id = (traj_id + 1) % cfg.buffer_size
-            warmup_steps = 0 # We'll start immediately now
+            warmup_steps = 0  # We'll start immediately now
 
         for step in tqdm(range(warmup_steps + cfg.iterations), position=0):
             train_step = max(step - warmup_steps, 0)
             percent_done = max((step - warmup_steps) / cfg.iterations, 0)
-            last_step_sample_bonus = cfg.last_step_sample_bonus + (cfg.last_step_sample_bonus_start - cfg.last_step_sample_bonus) * max(0, 1 - (train_step / cfg.last_step_sample_bonus_start_steps))
+            last_step_sample_bonus = cfg.last_step_sample_bonus + (
+                cfg.last_step_sample_bonus_start - cfg.last_step_sample_bonus
+            ) * max(0, 1 - (train_step / (cfg.last_step_sample_bonus_start_steps + 1)))
 
             # Collect experience
             with torch.no_grad():
@@ -456,13 +477,15 @@ if __name__ == "__main__":
                             )
                         ],
                         [1.0 if done or trunc else last_step_sample_bonus],
-                        [traj_id]
+                        [traj_id],
                     )
                     scorer.update(buffer)
-                    
+
                     # Send model to be scored (may be a no-op)
                     if cfg.use_potential or (done or trunc):
-                        scorer.push_model(env.model, inserted_idx, env.label_idx, traj_id)
+                        scorer.push_model(
+                            env.model, inserted_idx, env.label_idx, traj_id
+                        )
 
                     obs = next_obs
                     mask = next_mask
@@ -512,7 +535,9 @@ if __name__ == "__main__":
                             steps_taken = 0
                             episode_reward = 0.0
                             for _ in range(cfg.max_eval_steps):
-                                action, q_val = get_action(q_net, eval_obs.to(device), eval_mask.to(device))
+                                action, q_val = get_action(
+                                    q_net, eval_obs.to(device), eval_mask.to(device)
+                                )
                                 pred_reward_total += q_val
                                 obs_, reward, done, trunc, _ = test_env.step(action)
                                 eval_obs = eval_obs = process_obs(obs_)
@@ -521,7 +546,9 @@ if __name__ == "__main__":
                                 reward_total += reward
                                 episode_reward += reward
                                 if done or trunc:
-                                    images[test_env.prompt].append((episode_reward, test_env.screenshot()[0]))
+                                    images[test_env.prompt].append(
+                                        (episode_reward, test_env.screenshot()[0])
+                                    )
 
                                     obs_, info = test_env.reset()
                                     eval_obs = process_obs(obs_)
@@ -536,7 +563,17 @@ if __name__ == "__main__":
                             "eval_min_reward": min_reward_total,
                             "avg_eval_episode_predicted_reward": pred_reward_total
                             / cfg.eval_steps,
-                            "eval_images": sum([[wandb.Image(img, caption=f"{k}: {score}") for (score, img) in imgs] for k, imgs in images.items() if len(imgs) > 0], []),
+                            "eval_images": sum(
+                                [
+                                    [
+                                        wandb.Image(img, caption=f"{k}: {score}")
+                                        for (score, img) in imgs
+                                    ]
+                                    for k, imgs in images.items()
+                                    if len(imgs) > 0
+                                ],
+                                [],
+                            ),
                             "last_step_sample_bonus": last_step_sample_bonus,
                         }
                     )
@@ -544,8 +581,11 @@ if __name__ == "__main__":
                 wandb.log(log_dict)
 
                 # Update Q target
-                if step % cfg.target_update == 0:
-                    q_net_target.load_state_dict(q_net.state_dict())
+                if cfg.use_polyak:
+                    polyak_avg(q_net, q_net_target, cfg.polyak_tau)
+                else:
+                    if step % cfg.target_update == 0:
+                        q_net_target.load_state_dict(q_net.state_dict())
 
                 # Save checkpoint
                 if step % cfg.save_every == 0:
