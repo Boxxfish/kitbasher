@@ -525,6 +525,7 @@ if __name__ == "__main__":
                     with torch.no_grad():
                         reward_total = 0.0
                         pred_reward_total = 0.0
+                        last_step_pred_err = 0.0
                         max_reward_total = -float("inf")
                         min_reward_total = float("inf")
                         obs_, _ = test_env.reset()
@@ -546,6 +547,7 @@ if __name__ == "__main__":
                                 reward_total += reward
                                 episode_reward += reward
                                 if done or trunc:
+                                    last_step_pred_err += (reward - q_val)**2
                                     images[test_env.prompt].append(
                                         (episode_reward, test_env.screenshot()[0])
                                     )
@@ -561,6 +563,7 @@ if __name__ == "__main__":
                             "avg_eval_episode_reward": reward_total / cfg.eval_steps,
                             "eval_max_reward": max_reward_total,
                             "eval_min_reward": min_reward_total,
+                            "eval_last_step_pred_err": last_step_pred_err / cfg.eval_steps,
                             "avg_eval_episode_predicted_reward": pred_reward_total
                             / cfg.eval_steps,
                             "eval_images": sum(
