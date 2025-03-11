@@ -133,6 +133,7 @@ if __name__ == "__main__":
             train_cfg.tanh_logit,
             train_cfg.no_advantage,
             freeze_fe=train_cfg.freeze_fe,
+            use_global_gcn=train_cfg.use_global_gcn,
             feature_extractor=feature_extractor,
         )
         load_model(q_net, cfg.checkpoint)

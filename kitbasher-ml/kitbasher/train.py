@@ -126,6 +126,7 @@ class Config(BaseModel):
     use_traj_returns: bool = False
     use_polyak: bool = False
     polyak_tau: float = 0.005
+    use_global_gcn: bool = False
     device: str = "cuda"
 
 
@@ -158,6 +159,7 @@ class QNet(nn.Module):
         tanh_logit: bool,
         no_advantage: bool,
         freeze_fe: bool,
+        use_global_gcn: bool,
         feature_extractor: Optional[FeatureExtractor] = None,
     ):
         nn.Module.__init__(self)
@@ -167,6 +169,7 @@ class QNet(nn.Module):
         self.embeddings = nn.Parameter(torch.rand([num_parts, part_emb_size]))
 
         # Encode-process-encode architecture
+        max_aggr = aggr.MaxAggregation()
         self.encode = nn.Linear(part_emb_size + node_feature_dim, hidden_dim)
         process_layers: List[Union[Tuple[nn.Module, str], nn.Module]] = []
         for _ in range(num_steps):
@@ -190,6 +193,21 @@ class QNet(nn.Module):
                 process_layers.append(
                     (GCNConv(hidden_dim, hidden_dim), "x, edge_index -> x")
                 )
+                if use_global_gcn:
+                    process_layers.append(
+                        (
+                            Lambda(
+                                lambda x, batch, action_mask: x
+                                + max_aggr(
+                                    x.masked_fill(
+                                        (1 - action_mask).unsqueeze(-1), -torch.inf
+                                    ),
+                                    batch,
+                                )
+                            ),
+                            "x, batch, action_mask -> x",
+                        )
+                    )
             if process_type == "independent":
                 process_layers.append((nn.Linear(hidden_dim, hidden_dim), "x -> x"))
             process_layers.append(nn.ReLU())
@@ -218,11 +236,12 @@ class QNet(nn.Module):
 
     def forward(self, data: Data):
         data = data.sort()
-        x, edge_index, batch, part_ids = (
+        x, edge_index, batch, part_ids, action_mask = (
             data.x,
             data.edge_index,
             data.batch,
             data.part_ids,
+            data.action_mask,
         )
         if self.feature_extractor:
             x = self.feature_extractor(data)  # Shape: (num_nodes, hidden_dim)
@@ -235,7 +254,9 @@ class QNet(nn.Module):
                 [part_embs, x], 1
             )  # Shape: (num_nodes, node_dim + part_emb_dim)
             x = self.encode(node_embs)  # Shape: (num_nodes, hidden_dim)
-        x = self.process(x, edge_index, batch)  # Shape: (num_nodes, hidden_dim)
+        x = self.process(
+            x, edge_index, batch, action_mask
+        )  # Shape: (num_nodes, hidden_dim)
         advantage = self.advantage(x)  # Shape: (num_nodes, 1)
 
         # If advantages are enabled, q values are a combination of value + advantage
@@ -357,6 +378,7 @@ if __name__ == "__main__":
             tanh_logit=cfg.tanh_logit,
             no_advantage=cfg.no_advantage,
             freeze_fe=cfg.freeze_fe,
+            use_global_gcn=cfg.use_global_gcn,
             feature_extractor=feature_extractor,
         )
         q_net_target = copy.deepcopy(q_net)
@@ -547,7 +569,7 @@ if __name__ == "__main__":
                                 reward_total += reward
                                 episode_reward += reward
                                 if done or trunc:
-                                    last_step_pred_err += (reward - q_val)**2
+                                    last_step_pred_err += (reward - q_val) ** 2
                                     images[test_env.prompt].append(
                                         (episode_reward, test_env.screenshot()[0])
                                     )
@@ -563,7 +585,8 @@ if __name__ == "__main__":
                             "avg_eval_episode_reward": reward_total / cfg.eval_steps,
                             "eval_max_reward": max_reward_total,
                             "eval_min_reward": min_reward_total,
-                            "eval_last_step_pred_err": last_step_pred_err / cfg.eval_steps,
+                            "eval_last_step_pred_err": last_step_pred_err
+                            / cfg.eval_steps,
                             "avg_eval_episode_predicted_reward": pred_reward_total
                             / cfg.eval_steps,
                             "eval_images": sum(
