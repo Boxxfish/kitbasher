@@ -1,6 +1,12 @@
-use bevy::math::{Quat, Vec3};
-use kitbasher_game::engine::{Axis, Connection, Connector, KBEngine, PlacedConfig, AABB};
+use std::{
+    collections::{HashMap, VecDeque},
+    f32::consts::PI,
+};
+
+use bevy::math::{Mat3, Quat, Vec3};
+use kitbasher_game::engine::{Axis, Connection, Connector, KBEngine, PartData, PlacedConfig, AABB};
 use pyo3::prelude::*;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use three_d::*;
 
@@ -246,6 +252,42 @@ impl From<PyPlacedConfig> for PlacedConfig {
 }
 
 #[pyclass]
+#[derive(Debug, Clone)]
+pub struct PartReference {
+    part_id: usize,
+    pos_offset_x: f32,
+    pos_offset_y: f32,
+    pos_offset_z: f32,
+    rot_offset_x: u8,
+    rot_offset_y: u8,
+    rot_offset_z: u8,
+}
+
+#[pymethods]
+impl PartReference {
+    #[new]
+    fn new(
+        part_id: usize,
+        pos_offset_x: f32,
+        pos_offset_y: f32,
+        pos_offset_z: f32,
+        rot_offset_x: u8,
+        rot_offset_y: u8,
+        rot_offset_z: u8,
+    ) -> PartReference {
+        PartReference {
+            part_id,
+            pos_offset_x,
+            pos_offset_y,
+            pos_offset_z,
+            rot_offset_x,
+            rot_offset_y,
+            rot_offset_z,
+        }
+    }
+}
+
+#[pyclass]
 pub struct EngineWrapper {
     engine: KBEngine,
 }
@@ -312,6 +354,207 @@ impl EngineWrapper {
             bboxes: part.bboxes.clone().iter().map(|x| (*x).into()).collect(),
             connections: vec![None; part.connectors.len()],
         }
+    }
+
+    // Constructs the ldraw model in the engine.
+    pub fn load_ldraw(
+        &mut self,
+        path: &str,
+        ref_map: HashMap<String, PartReference>,
+        use_mirror: bool,
+    ) {
+        let pos_scale = 0.25;
+        let file_bytes = std::fs::read(path).unwrap();
+        let commands = weldr::parse_raw(&file_bytes).unwrap();
+        for cmd in &commands {
+            if let weldr::Command::SubFileRef(cmd) = cmd {
+                if let weldr::SubFileRef::UnresolvedRef(subref) = &cmd.file {
+                    let subref = subref.replace(".dat", "");
+                    let part_ref = ref_map
+                        .get(&subref)
+                        .unwrap_or_else(|| panic!("\"{subref}\" was not present in `ref_map`."));
+                    let part_id = part_ref.part_id;
+                    let part = self.engine.get_part(part_id);
+
+                    // Transform our part to ldraw part rotation + position
+                    let pos_offset = Vec3::new(
+                        part_ref.pos_offset_x,
+                        part_ref.pos_offset_y,
+                        part_ref.pos_offset_z,
+                    );
+                    let (new_part, new_rotation) = self.engine.rotate_part(
+                        part,
+                        part_ref.rot_offset_x as i32,
+                        part_ref.rot_offset_y as i32,
+                        part_ref.rot_offset_z as i32,
+                    );
+
+                    // Place part on model
+                    let ldraw_pos = Vec3::new(cmd.pos.x, -cmd.pos.y, cmd.pos.z) * pos_scale; // ldraw uses -Y
+                    let xform = Mat3::from_cols(
+                        Vec3::new(cmd.row0.x, cmd.row0.y, cmd.row0.z),
+                        Vec3::new(cmd.row1.x, cmd.row1.y, cmd.row1.z),
+                        Vec3::new(cmd.row2.x, cmd.row2.y, cmd.row2.z),
+                    )
+                    .transpose();
+                    let ldraw_rot = Quat::from_mat3(&xform);
+                    let xformed_pos_offset = ldraw_rot.mul_vec3(pos_offset);
+                    let (x_rot, y_rot, z_rot) = ldraw_rot.to_euler(bevy::math::EulerRot::XYZ);
+                    let x_rot = ((x_rot / (PI / 2.)).round() as i32) % 4;
+                    let y_rot = ((y_rot / (PI / 2.)).round() as i32) % 4;
+                    let z_rot = ((z_rot / (PI / 2.)).round() as i32) % 4;
+                    let (new_part, rotation) =
+                        self.engine.rotate_part(&new_part, x_rot, y_rot, z_rot);
+                    let new_rotation = rotation.mul_quat(new_rotation);
+                    let new_position = ldraw_pos - xformed_pos_offset;
+
+                    // If we're mirroring and the part crosses the X axis, skip adding it
+                    if use_mirror && !self.engine.get_model().is_empty() {
+                        let x_origin = self.engine.get_model()[0].bboxes[0].center.x;
+                        let mut crossed = false;
+                        for bbox in &new_part.bboxes {
+                            let x = bbox.center.x + new_position.x - bbox.half_sizes.x;
+                            if x < x_origin - 0.1 {
+                                crossed = true;
+                                break;
+                            }
+                        }
+                        if crossed {
+                            continue;
+                        }
+                    }
+
+                    let config = PlacedConfig {
+                        bboxes: new_part.bboxes.clone(),
+                        connections: new_part.connectors.iter().map(|_| None).collect(),
+                        connectors: new_part.connectors.clone(),
+                        part_id,
+                        position: new_position,
+                        rotation: new_rotation,
+                    };
+                    self.engine.place_part(&config);
+                }
+            }
+        }
+
+        // Connect parts together
+        // Assumption: Only two connectors ever overlap each other
+        let model = &mut self.engine.model;
+        for part1_idx in 0..model.len() {
+            for c1_idx in 0..model[part1_idx].connectors.len() {
+                if model[part1_idx].connections[c1_idx].is_some() {
+                    continue;
+                }
+                'find_conn: for part2_idx in 0..model.len() {
+                    if part1_idx == part2_idx {
+                        continue;
+                    }
+                    let part2 = &model[part2_idx];
+                    for c2_idx in 0..part2.connectors.len() {
+                        if part2.connections[c2_idx].is_some() {
+                            continue;
+                        }
+                        let c1 = &model[part1_idx].connectors[c1_idx];
+                        let c2 = &part2.connectors[c2_idx];
+                        let c1_world_pos = model[part1_idx].position + c1.position;
+                        let c2_world_pos = part2.position + c2.position;
+                        if c1_world_pos.abs_diff_eq(c2_world_pos, 4.)
+                            && c1.axis == c2.axis
+                            && c1.side_a != c2.side_a
+                            && (self
+                                .engine
+                                .connect_rules
+                                .contains(&[c1.connect_type, c2.connect_type])
+                                || self
+                                    .engine
+                                    .connect_rules
+                                    .contains(&[c1.connect_type, c2.connect_type]))
+                        {
+                            model[part1_idx].connections[c1_idx] = Some(Connection {
+                                placed_id: part2_idx,
+                                connector_id: c2_idx,
+                            });
+                            model[part2_idx].connections[c2_idx] = Some(Connection {
+                                placed_id: part1_idx,
+                                connector_id: c1_idx,
+                            });
+                            // println!("Connected {part1_idx} to {part2_idx}");
+                            break 'find_conn;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Shuffles the indices of the parts of the model.
+    /// This is useful when popping off the last pieces of the model to get a sequence of partial build states.
+    /// The new model is guaranteed to be buildable (e.g. all parts after the first part connect to some part of the model).
+    /// Additionally, the first part will be unchanged.
+    pub fn shuffle_model_parts(&mut self) {
+        // Determine new indices
+        let mut rng = rand::thread_rng();
+        let mut new_to_old: Vec<_> = vec![0]; // the new `i` is the old `new_idxs[i]`
+        for _ in 1..self.engine.model.len() {
+            let mut candidates = Vec::new();
+            for old_idx in 0..self.engine.model.len() {
+                // Skip if this part is already in the new model
+                if new_to_old.contains(&old_idx) {
+                    continue;
+                }
+                // Add to candidates if this part connects to any parts in the new model
+                for conn in self.engine.model[old_idx].connections.iter().flatten() {
+                    if new_to_old.contains(&conn.placed_id) {
+                        candidates.push(old_idx);
+                        break;
+                    }
+                }
+            }
+            // println!("{new_to_old:?}");
+            new_to_old.push(*candidates.choose(&mut rng).unwrap());
+        }
+        let mut old_to_new: Vec<_> = (0..self.engine.get_model().len()).map(|_| 0).collect();
+        for (new_idx, &old_idx) in new_to_old.iter().enumerate() {
+            old_to_new[old_idx] = new_idx;
+        }
+
+        // Create new model
+        let old_model = self.engine.get_model();
+        let mut new_model = Vec::new();
+        for old_idx in &new_to_old {
+            let mut new_part = old_model[*old_idx].clone();
+            for conn_idx in 0..new_part.connections.len() {
+                if let Some(conn) = &mut new_part.connections[conn_idx] {
+                    conn.placed_id = old_to_new[conn.placed_id];
+                }
+            }
+            new_model.push(new_part);
+        }
+
+        self.engine.set_model(&new_model);
+    }
+
+    /// Pops off the last part of the model and returns it as a part config.
+    /// This can be directly added to the model again via `place_part`.
+    /// Connections to the popped part will be removed from the model, but the
+    /// returned config will retain these connections (the same as any other part candidate).
+    pub fn pop_part(&mut self) -> PyPlacedConfig {
+        let popped_idx = self.engine.model.len() - 1;
+        let popped_cfg = self
+            .engine
+            .model
+            .pop()
+            .expect("Must be at least one part on model.");
+        for part in &mut self.engine.model {
+            for conn_idx in 0..part.connections.len() {
+                if let Some(conn) = &part.connections[conn_idx] {
+                    if conn.placed_id == popped_idx {
+                        part.connections[conn_idx] = None;
+                    }
+                }
+            }
+        }
+        popped_cfg.into()
     }
 }
 
@@ -573,8 +816,8 @@ impl Renderer {
             //         .into(),
             // ]);
             // let bounding_box_cube = Gm::new(
-            //     BoundingBox::new(&context, aabb),
-            //     PhysicalMaterial::new_opaque(&context, &outline_material),
+            //     BoundingBox::new(context, aabb),
+            //     PhysicalMaterial::new_opaque(context, &outline_material),
             // );
 
             let buffer = RenderTarget::new(
@@ -583,6 +826,7 @@ impl Renderer {
             )
             .clear(ClearState::color_and_depth(1., 1., 1., 1., 1.))
             .render(&camera, &models, &[&directional])
+            // .render(&camera, vec![bounding_box_cube], &[&directional])
             .read_color::<[u8; 4]>();
             buffers.push(buffer.into_flattened());
         }
@@ -602,5 +846,6 @@ fn kitbasher_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyConnection>()?;
     m.add_class::<PyConnector>()?;
     m.add_class::<Renderer>()?;
+    m.add_class::<PartReference>()?;
     Ok(())
 }

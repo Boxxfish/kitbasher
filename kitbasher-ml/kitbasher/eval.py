@@ -147,9 +147,8 @@ if __name__ == "__main__":
                 if cfg.checkpoint:
                     action, q_val = get_action(q_net, eval_obs, eval_mask)
                 else:
-                    action = action = random.choice(
-                        [i for i, b in enumerate((~eval_mask.bool()).tolist()) if b]
-                    )
+                    action_choices = [i for i, b in enumerate((~eval_mask.bool()).tolist()) if b]
+                    action = action = random.choice(action_choices)
                 obs_, reward, done, trunc, info = env.step(action)
                 env.render()
                 rr.log(
