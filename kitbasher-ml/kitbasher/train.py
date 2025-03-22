@@ -126,7 +126,7 @@ class Config(BaseModel):
     use_traj_returns: bool = False
     use_polyak: bool = False
     polyak_tau: float = 0.005
-    use_global_gcn: bool = False
+    use_gcn_skips: bool = False
     device: str = "cuda"
 
 
@@ -147,6 +147,24 @@ class Lambda(nn.Module):
         return self.fn(*args)
 
 
+class SkipWrapper(nn.Module):
+    """
+    Implements a skip connection.
+
+    The module signature must be "x, edge_index -> x".
+    """
+
+    def __init__(self, module: nn.Module, act_fn: nn.Module):
+        nn.Module.__init__(self)
+        self.module = module
+        self.act_fn = act_fn
+
+    def forward(self, x: Tensor, edge_index: Tensor):
+        return (
+            x + self.act_fn(self.module(x, edge_index))
+        ) / 2.0  # Division is to prevent extremely large values with more layers
+
+
 class QNet(nn.Module):
     def __init__(
         self,
@@ -159,8 +177,8 @@ class QNet(nn.Module):
         tanh_logit: bool,
         no_advantage: bool,
         freeze_fe: bool,
-        use_global_gcn: bool,
         feature_extractor: Optional[FeatureExtractor] = None,
+        use_gcn_skips: bool = False,
     ):
         nn.Module.__init__(self)
         assert process_type in ["deep_set", "gcn", "self_attn", "independent"]
@@ -169,52 +187,46 @@ class QNet(nn.Module):
         self.embeddings = nn.Parameter(torch.rand([num_parts, part_emb_size]))
 
         # Encode-process-encode architecture
-        max_aggr = aggr.MaxAggregation()
         self.encode = nn.Linear(part_emb_size + node_feature_dim, hidden_dim)
         process_layers: List[Union[Tuple[nn.Module, str], nn.Module]] = []
         for _ in range(num_steps):
             if process_type == "deep_set":
-                process_layers.append(
+                process_layers += [
                     (
                         DeepSetsAggregation(
                             nn.Linear(hidden_dim, hidden_dim),
                             nn.Linear(hidden_dim, hidden_dim),
                         ),
                         "x, batch -> x",
-                    )
-                )
-                process_layers.append(
+                    ),
                     (
                         Lambda(lambda x, batch: torch.index_select(x, 0, batch)),
                         "x, batch -> x",
-                    )
-                )
+                    ),
+                    nn.SiLU(),
+                ]
             if process_type == "gcn":
-                process_layers.append(
-                    (GCNConv(hidden_dim, hidden_dim), "x, edge_index -> x")
-                )
-                if use_global_gcn:
+                if not use_gcn_skips:
+                    process_layers += [
+                        (GCNConv(hidden_dim, hidden_dim), "x, edge_index -> x"),
+                        nn.SiLU(),
+                    ]
+                else:
                     process_layers.append(
                         (
-                            Lambda(
-                                lambda x, batch, action_mask: x
-                                + max_aggr(
-                                    x.masked_fill(
-                                        (1 - action_mask).unsqueeze(-1), -torch.inf
-                                    ),
-                                    batch,
-                                )
-                            ),
-                            "x, batch, action_mask -> x",
+                            SkipWrapper(GCNConv(hidden_dim, hidden_dim), nn.SiLU()),
+                            "x, edge_index -> x",
                         )
                     )
             if process_type == "independent":
-                process_layers.append((nn.Linear(hidden_dim, hidden_dim), "x -> x"))
-            process_layers.append(nn.ReLU())
-        self.process = Sequential("x, edge_index, batch", process_layers)
+                process_layers += [
+                    (nn.Linear(hidden_dim, hidden_dim), "x -> x"),
+                    nn.SiLU(),
+                ]
+        self.process = Sequential("x, edge_index, batch, action_mask", process_layers)
         self.advantage = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
+            nn.SiLU(),
             nn.Linear(hidden_dim, 1),
         )
         self.mean_aggr = aggr.MeanAggregation()
@@ -222,7 +234,7 @@ class QNet(nn.Module):
         self.use_advantage = not no_advantage
         if self.use_advantage:
             self.value = nn.Sequential(
-                nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, 1)
+                nn.Linear(hidden_dim, hidden_dim), nn.SiLU(), nn.Linear(hidden_dim, 1)
             )
         self.tanh_logit = tanh_logit
         self.feature_extractor = feature_extractor
@@ -378,8 +390,8 @@ if __name__ == "__main__":
             tanh_logit=cfg.tanh_logit,
             no_advantage=cfg.no_advantage,
             freeze_fe=cfg.freeze_fe,
-            use_global_gcn=cfg.use_global_gcn,
             feature_extractor=feature_extractor,
+            use_gcn_skips=cfg.use_gcn_skips,
         )
         q_net_target = copy.deepcopy(q_net)
         q_net.to(device)
