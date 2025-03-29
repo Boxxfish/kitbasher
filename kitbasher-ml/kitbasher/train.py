@@ -127,6 +127,7 @@ class Config(BaseModel):
     use_polyak: bool = False
     polyak_tau: float = 0.005
     use_gcn_skips: bool = False
+    render_one_side: bool = False
     device: str = "cuda"
 
 
@@ -333,6 +334,7 @@ if __name__ == "__main__":
         norm_min=cfg.norm_min,
         norm_max=cfg.norm_max,
         use_potential=cfg.use_potential,
+        render_one_side=cfg.render_one_side,
     )
     with scorer_manager() as scorer:
         env = ConstructionEnv(
@@ -573,6 +575,7 @@ if __name__ == "__main__":
                                 action, q_val = get_action(
                                     q_net, eval_obs.to(device), eval_mask.to(device)
                                 )
+                                q_val = (q_val * (cfg.norm_max - cfg.norm_min)) + cfg.norm_min
                                 pred_reward_total += q_val
                                 obs_, reward, done, trunc, _ = test_env.step(action)
                                 eval_obs = eval_obs = process_obs(obs_)

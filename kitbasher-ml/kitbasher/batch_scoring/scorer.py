@@ -12,6 +12,7 @@ def main():
     parser = ArgumentParser()
     parser.add_argument("--score-port-in", type=int)
     parser.add_argument("--train-port-in", type=int)
+    parser.add_argument("--render-one-side", action="store_true")
     args = parser.parse_args()
 
     # Set up sockets
@@ -47,6 +48,8 @@ def main():
 
             outputs = clip(**inputs)
             logits_per_image = outputs.logits_per_image
+            if args.render_one_side:
+                logits_per_image = logits_per_image[0].unsqueeze(0)
             score = logits_per_image.mean().item() / 30.0
         else:
             inputs = processor(
@@ -57,6 +60,8 @@ def main():
             )
             outputs = clip(**inputs)
             logits_per_image = outputs.logits_per_image.softmax(1)
+            if args.render_one_side:
+                logits_per_image = logits_per_image[0].unsqueeze(0)
             score = logits_per_image.mean(0)[scorer_msg.label_idx].item()
 
         # Send message to training loop

@@ -99,7 +99,7 @@ def connect_scorer(
     return 1.0 if connected else 0.0, connected
 
 
-def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
+def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32", render_one_side: bool = False):
     from transformers import CLIPProcessor, CLIPModel
 
     clip = CLIPModel.from_pretrained(model_url)
@@ -124,13 +124,15 @@ def create_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
 
         outputs = clip(**inputs)
         logits_per_image = outputs.logits_per_image
+        if render_one_side:
+            logits_per_image = logits_per_image[0].unsqueeze(0)
         score = logits_per_image.mean().item() / 30.0
         return score, False
 
     return clip_scorer
 
 
-def create_contrastive_clip_scorer(model_url: str = "openai/clip-vit-base-patch32"):
+def create_contrastive_clip_scorer(model_url: str = "openai/clip-vit-base-patch32", render_one_side: bool = False):
     from transformers import CLIPProcessor, CLIPModel
 
     clip = CLIPModel.from_pretrained(model_url)
@@ -155,6 +157,8 @@ def create_contrastive_clip_scorer(model_url: str = "openai/clip-vit-base-patch3
 
         outputs = clip(**inputs)
         logits_per_image = outputs.logits_per_image.softmax(1)
+        if render_one_side:
+            logits_per_image = logits_per_image.unsqueeze(0)
         score = logits_per_image.mean(0)[label_idx].item()
         return score, False
 
