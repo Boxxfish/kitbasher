@@ -253,9 +253,9 @@ class ConstructionEnv(gym.Env):
         random.shuffle(place_configs)
         self.place_configs = place_configs[: self.max_actions_per_step]
 
-        # If `traj_parts` contains elements, replace the first place config
+        # If `traj_parts` contains elements, replace the last place config
         if len(self.traj_parts) > 0:
-            self.place_configs[0] = self.traj_parts.pop(0)
+            self.place_configs[-1] = self.traj_parts.pop(0)
 
         # Create graph features
         part_ids = []

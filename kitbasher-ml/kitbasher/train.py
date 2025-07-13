@@ -367,12 +367,11 @@ if __name__ == "__main__":
         if cfg.use_ldraw:
             while not buffer.filled:
                 with torch.no_grad():
+                    action_choices = [i for i, b in enumerate((~mask.bool()).tolist()) if b]
                     if random.random() < 0.88:
-                        action = 0
+                        action = action_choices[-1]
                     else:
-                        action = random.choice(
-                            [i for i, b in enumerate((~mask.bool()).tolist()) if b]
-                        )
+                        action = random.choice(action_choices)
                     obs_, reward, done, trunc, info_ = env.step(action)
 
                     # Normalize reward if last step
