@@ -2,7 +2,7 @@
 
 **Note: This repository is in semi-archived mode. Feel free to fork and make any changes, but aside from major issues no changes will be made to this repository. Thanks!**
 
-[![Video](https://img.youtube.com/vi/54bOSzWGBEw/Tfj4VqN3uzg.jpg)](https://youtu.be/Tfj4VqN3uzg)
+[![Video](https://img.youtube.com/vi/Tfj4VqN3uzg/mqdefault.jpg)](https://youtu.be/Tfj4VqN3uzg)
 
 This repo contains code to train a neural network to generate Lego models from a description (albeit poorly 😅).
 
