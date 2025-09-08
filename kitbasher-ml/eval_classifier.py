@@ -77,7 +77,7 @@ def main():
     y_pred = sum([[idx_to_cls[torch.tensor(prob).argmax().item()] for prob in cls_probs[c.id]] for c in meta.classes], start=[])
     c_matrix = confusion_matrix(y_true, y_pred, labels=[c.id for c in meta.classes], normalize="true")
     c_disp = ConfusionMatrixDisplay(c_matrix, display_labels=[c.id for c in meta.classes])
-    c_disp.plot()
+    c_disp.plot(xticks_rotation=-45.0)
     plt.show()
 
 if __name__ == "__main__":
