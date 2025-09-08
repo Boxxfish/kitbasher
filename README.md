@@ -38,3 +38,9 @@ WANDB_ENTITY=YOUR_WANDB_ID python kitbasher/train.py --process-type gcn --score-
 ```
 
 If you open up your WandB dashboard, you should see models being generated every 500 iterations!
+
+## License and Copyright
+
+This repo is licensed under the MIT license.
+
+LEGO® is a trademark of the LEGO Group of companies which does not sponsor, authorize or endorse this work.
